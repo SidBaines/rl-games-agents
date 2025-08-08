@@ -1,0 +1,90 @@
+# DQN curriculum training configuration for Ricochet Robots
+game:
+  type: "ricochet_robots"
+  # Game parameters will be controlled by curriculum
+  board_size: 16  # Max size (overridden by curriculum)
+  num_robots: 4   # Max robots (overridden by curriculum)
+  reward_per_move: -1.0
+  reward_goal: 100.0
+
+agent:
+  type: "dqn"
+  learning_rate: 0.0001
+  buffer_size: 100000
+  learning_starts: 5000  # Reduced for curriculum
+  batch_size: 32
+  gamma: 0.99
+  exploration_fraction: 0.3  # Longer exploration for curriculum
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.1
+  verbose: 0
+
+encoder:
+  type: "planar"
+
+environment:
+  max_episode_steps: 100  # Increased for harder levels
+  curriculum_update_freq: 1  # Update curriculum every episode
+
+curriculum:
+  type: "ricochet_robots"
+  difficulty_lookup_dir: "./difficulty_lookup"
+  evaluation_episodes: 50  # Episodes to evaluate before progression
+  max_fallback_attempts: 5
+  levels:
+    - name: "Easy"
+      min_solve_length: 1
+      max_solve_length: 3
+      success_threshold: 0.85
+      board_size: 4
+      num_robots: 2
+      max_walls: 8
+      episodes_per_evaluation: 50
+    - name: "Medium"
+      min_solve_length: 3
+      max_solve_length: 6
+      success_threshold: 0.75
+      board_size: 6
+      num_robots: 2
+      max_walls: 12
+      episodes_per_evaluation: 75
+    - name: "Hard"
+      min_solve_length: 5
+      max_solve_length: 10
+      success_threshold: 0.65
+      board_size: 8
+      num_robots: 3
+      max_walls: 20
+      episodes_per_evaluation: 100
+    - name: "Expert"
+      min_solve_length: 8
+      max_solve_length: 15
+      success_threshold: 0.55
+      board_size: 12
+      num_robots: 4
+      max_walls: 30
+      episodes_per_evaluation: 150
+    - name: "Master"
+      min_solve_length: 10
+      max_solve_length: 20
+      success_threshold: 0.45
+      board_size: 16
+      num_robots: 4
+      max_walls: 40
+      episodes_per_evaluation: 200
+
+training:
+  total_timesteps: 500000  # Increased for curriculum
+  eval_freq: 10000
+  save_freq: 25000
+  eval_episodes: 20
+  curriculum_update_freq: 100  # Update curriculum every 100 timesteps
+  log_freq: 100
+
+logging:
+  use_wandb: true
+  wandb_project: "rl-board-games"
+  wandb_run_name: "dqn-ricochet-curriculum"
+
+checkpoints:
+  save_dir: "./checkpoints/"

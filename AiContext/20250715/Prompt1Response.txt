@@ -1,0 +1,189 @@
+
+Below is a detailed, research-backed roadmap for building the repository.  It is organised as sequential “milestones”, but you can overlap many of them in practice.
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 0 – LIGHTWEIGHT RESEARCH & DECISIONS
+────────────────────────────────────────────────────────────────────────
+1.  Core RL / training framework  
+    • Stable-Baselines3 (SB3) – mature, PyTorch-based, easy to subclass.  
+    • Ray RLlib – scales to many CPUs/GPUs, but heavier.  
+    • Decision: start with SB3 (quick iteration); keep interfaces thin so we can swap in RLlib later.
+
+2.  Game-environment interface  
+    • OpenAI Gymnasium (Gym v0.26+) is the de-facto API.  
+    • PettingZoo if we eventually want multi-agent games.
+
+3.  Board-game specific libraries  
+    • `gym-ricochet-robots` (MIT-licence) – simple, but limited board sizes.  
+    • `ricochet-robots-solver` – C++ solver bindings; could inspire heuristics.  
+    • Neither is fully production-ready; we will likely implement our own fast board engine (with optional Cython/Numba acceleration) but inspect these repos for ideas.
+
+4.  Model training utilities  
+    • PyTorch Lightning or plain PyTorch + SB3 built-ins.  
+    • Logging/visualisation: Weights & Biases (W&B) or TensorBoard.  
+    • Checkpointing: SB3 already supports `.zip` snapshots; we will wrap this in a `CheckpointManager`.
+
+5.  Planning / heuristic solvers  
+    • `networkx` for generic graph/A* helpers.  
+    • Optional `heapdict` for faster priority queues inside A*.
+
+6.  Testing & CI  
+    • `pytest`, `pytest-benchmark`, `hypothesis` (property tests).  
+    • GitHub Actions or GitLab CI with matrix over python versions.
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 1 – REPOSITORY BOOTSTRAP
+────────────────────────────────────────────────────────────────────────
+A.  Create repo with Poetry or plain `pyproject.toml`; pin key libs:
+
+   stable-baselines3, torch, gymnasium, numpy, numba, networkx, wandb, pytest, hypothesis, black, isort, pre-commit  
+
+B.  Directory skeleton
+
+```
+rl_board_games/
+    core/
+        game.py           # abstract Game, GameState, Encoder
+        agent.py          # abstract Agent
+        curriculum.py
+        solver.py         # abstract HeuristicSolver
+        persistence.py    # serialization helpers
+        utils/
+    games/
+        ricochet_robots/
+            game.py
+            encoders.py
+            solver_astar.py
+            __init__.py
+        # later: chess/, go/, ...
+    agents/
+        sb3/
+            dqn_agent.py
+            ppo_agent.py
+        heuristic/
+            random_agent.py
+            astar_agent.py
+    training/
+        trainer.py
+        callbacks.py
+        eval.py
+    configs/
+        ricochet_robots/
+            dqn_small.yaml
+    tests/
+        games/
+        agents/
+        curricula/
+        solvers/
+    scripts/
+        train.py
+        play_human_vs_ai.py
+```
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 2 – CORE ABSTRACTIONS
+────────────────────────────────────────────────────────────────────────
+1. `Game` (Gym-like but richer)  
+   • `reset(seed) → GameState`  
+   • `step(action) → GameState, reward, done, info`  
+   • `legal_actions(state)`  
+   • `render(mode: Literal["rgb_array", "human"])`
+
+2. `GameState` (frozen dataclass)  
+   • Board tensor, robot positions, goal, …  
+   • Hashable for caching.
+
+3. `Encoder` – converts `GameState` → observation tensor(s) for agents.  
+   • Derived classes: `FlatArrayEncoder`, `ImageLikeEncoder`, etc.
+
+4. `Agent`  
+   • `act(state)`  
+   • `learn(batch)` (no-op for heuristic agents)  
+   • `save(path)`, `load(path)`
+
+5. `HeuristicSolver` (e.g. A*) implements `solve(state) → action_sequence`.
+
+6. `Curriculum`  
+   • Supplies sequence/generator of initial boards with optional progression logic (`next_difficulty()`).
+
+7. `CheckpointManager`  
+   • Unified save/load for GameState, Agent parameters, training stats.
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 3 – RICHOCHET ROBOTS GAME ENGINE
+────────────────────────────────────────────────────────────────────────
+1.  Board representation  
+    • 2-D `numpy.int8` for walls; four `uint8` robot coordinate pairs.  
+    • Bit-board (64-bit ints) variant for smaller boards; benchmark both.  
+    • Optionally compile critical funcs with Numba or Cython.
+
+2.  Actions = {Up, Down, Left, Right}.  Each move slides until wall/robot.  
+3.  Reward shaping (for RL) configurable:  
+    • Sparse: −1 per move, +100 at goal.  
+    • Dense: heuristics distance estimate.  
+4.  Deterministic `seed` to generate random but reproducible board layouts.  
+5.  `ricochet_robots/solver_astar.py`  
+    • Domain-specific admissible heuristic = Manhattan to goal ignoring walls + penalty per robot blocking.  
+    • Needs transposition table for performance.  
+6.  Unit tests  
+    • Property: solver path ≤ known optimal for small canonical boards.  
+    • Correctness of `step()` idempotency, legal moves, etc.  
+7.  Benchmarks  
+    • `pytest-benchmark` to compare pure-python vs numba build.
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 4 – RL AGENTS & TRAINING PIPELINE
+────────────────────────────────────────────────────────────────────────
+1.  Implement `SB3Agent` base that wraps any SB3 model; handles `act`, `learn`, checkpoint, evaluation.  
+2.  Pre-built derived classes: `DQNAgent`, `PPOAgent`.  
+3.  `Trainer`:  
+    • Accepts Agent, Game, Curriculum, Encoder.  
+    • Controls env vectorisation (`gymnasium.vector`), evaluation episodes, logging to W&B.  
+    • Early stopping, learning rate schedules.  
+4.  CLI / script `scripts/train.py`: YAML config → instantiate everything.    
+5.  Automatically export checkpoints plus curriculum difficulty at each stage.
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 5 – CURRICULA & ENCODERS
+────────────────────────────────────────────────────────────────────────
+1.  `AllEasyBoards`, `EasyToHardMixed`, `RandomGoalRandomBoard`, etc.  
+2.  Encoders to test:  
+    • Raw numeric board channels (fast).  
+    • “Rendered” RGB image using `pygame`/`Pillow` for CNN agents.  
+    • Graph embedding via GNN (future work).
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 6 – TESTING, QUALITY, CI/CD
+────────────────────────────────────────────────────────────────────────
+1.  Every public class gets doctest-style usage example and at least one `pytest` unit test.  
+2.  `pytest --benchmark-only` for critical board functions.  
+3.  Hypothesis property tests for idempotent inverse moves (if applicable).  
+4.  Pre-commit hooks: black, isort, flake8, mypy (optional typing).  
+5.  GitHub Actions matrix: `python 3.9, 3.10, 3.11`, run unit + smoke training (few steps) + code-style.
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 7 – SCALABILITY & PERFORMANCE HARDENING
+────────────────────────────────────────────────────────────────────────
+1.  Profile board engine with `cProfile` + `snakeviz`; optimise hotspots.  
+2.  Experiment: pure Python vs Numba vs Cython vs C++ w/ pybind11.  
+3.  If moving to Ray RLlib: implement `RicochetRobotsEnv` following RLlib API; can reuse same core logic.
+
+────────────────────────────────────────────────────────────────────────
+MILESTONE 8 – EXTENSIBILITY FOR OTHER GAMES
+────────────────────────────────────────────────────────────────────────
+1.  Follow same pattern to add Chess, Go, Connect-Four, etc.  
+2.  Drop each new game under `games/` with its own solver, encoders, tests.  
+3.  Curriculum abstraction already general; just plug new generators.
+
+────────────────────────────────────────────────────────────────────────
+DELIVERABLE CHECKLIST
+────────────────────────────────────────────────────────────────────────
+✓ pyproject / requirements.txt  
+✓ Core abstractions (`Game`, `Agent`, `Curriculum`, `Solver`, `Encoder`)  
+✓ Fast Ricochet Robots engine + A* solver  
+✓ SB3 agents wrapper with switchable encoders  
+✓ YAML-driven training script with checkpoint + W&B logging  
+✓ 90%+ unit-test coverage, benchmarks, CI, pre-commit  
+✓ Documentation (README + docs/ via MkDocs)  
+
+Following this plan yields a flexible, efficient, and well-tested codebase that can grow from Ricochet Robots to a full suite of RL-playable board games.

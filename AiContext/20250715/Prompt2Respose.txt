@@ -1,0 +1,25 @@
+Starting repository setup
+The user wants me to begin writing code for Milestone 1, which involves creating a directory skeleton, setting up a requirements file, and possibly initial code templates. I’ll also keep track of progress in a dated file within the AiContext folder. It looks like I'll create or edit a file called AiContext/2025-07-15.md or .txt for notes. I’ll ensure to follow proper procedures for tool usage when creating these directories and files.
+Setting up the repository
+The user created a virtual environment, and now I'm ready to write code for Stage 1. This involves creating the repository skeleton, a requirements.txt, and empty class templates. I’ll set up the directory structure and include init.py files in the packages. A pyproject.toml file is good too, but I think I'll start with requirements.txt for simplicity. I’ll define core abstract classes, add an AiContext directory for progress notes, and include a .gitignore file. I'll aim to parallelize file creation for efficiency.
+
+
+<actions>
+</actions>
+
+Repository scaffolding for Milestone 1 is now in place:
+
+1. Added top-level `rl_board_games` package plus `core` sub-package.
+2. Implemented abstract base classes for Game, Agent, Curriculum, Encoder, Solver, and CheckpointManager.
+3. Created placeholders for `games`, `agents`, and `training` packages as well as a `utils` sub-package.
+4. Added `requirements.txt` containing the first wave of dependencies you’ll need inside your existing `robots-venv`.
+5. Wrote an initial progress log at `AiContext/2025-07-15.md` describing what was done and outlining next tasks.
+
+You can now:
+
+```
+source /data/atlas/baines/robots-venv/bin/activate
+pip install -r requirements.txt
+```
+
+Next up will be Milestone 2—building the Ricochet Robots game engine and A* solver—plus CI and unit-test infrastructure. Let me know when you’re ready to proceed or if you’d like any tweaks to the current structure.

@@ -1,0 +1,5 @@
+checkpoints/
+demo_checkpoints/
+wandb/
+__pycache__/
+rl_board_games.egg-info/

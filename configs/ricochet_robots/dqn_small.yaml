@@ -1,0 +1,38 @@
+# DQN training configuration for Ricochet Robots
+game:
+  type: "ricochet_robots"
+  board_size: 8
+  num_robots: 4
+  reward_per_move: -1.0
+  reward_goal: 100.0
+
+agent:
+  type: "dqn"
+  learning_rate: 0.0001
+  buffer_size: 100000
+  learning_starts: 10000
+  batch_size: 32
+  gamma: 0.99
+  exploration_fraction: 0.2
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.1
+
+encoder:
+  type: "flat_array"
+
+environment:
+  max_episode_steps: 50
+
+training:
+  total_timesteps: 100000
+  eval_freq: 10000
+  save_freq: 25000
+  eval_episodes: 10
+
+logging:
+  use_wandb: true
+  wandb_project: "rl-board-games"
+  wandb_run_name: "dqn-ricochet-small"
+
+checkpoints:
+  save_dir: "./checkpoints/" 
