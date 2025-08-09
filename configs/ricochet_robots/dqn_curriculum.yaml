@@ -80,6 +80,14 @@ training:
   eval_episodes: 20
   curriculum_update_freq: 100  # Update curriculum every 100 timesteps
   log_freq: 100
+  # Optional: log an agent rollout video to Weights & Biases periodically
+  # Set rollout_log_freq > 0 to enable. Keep infrequent to save storage.
+  # rollout_log_freq: 20000   # log every 20k steps (disabled by default)
+  # rollout_max_steps: 50     # max steps per logged rollout
+  # rollout_fps: 2            # playback fps for the video
+  # Optional: enable CPU profiling for a full breakdown (use sparingly; slows training)
+  # profile: false
+  # profile_output: ./profiles/train_profile.prof
 
 logging:
   use_wandb: true

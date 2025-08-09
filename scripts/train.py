@@ -16,7 +16,7 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from rl_board_games.games.ricochet_robots import RicochetRobotsGame, FlatArrayEncoder, PlanarEncoder, WallAwarePlanarEncoder
+from rl_board_games.games.ricochet_robots import RicochetRobotsGame, FlatArrayEncoder, PlanarEncoder, WallAwarePlanarEncoder, RGBArrayEncoder
 from rl_board_games.games.ricochet_robots.board import Board
 from rl_board_games.agents.sb3 import DQNAgent, PPOAgent
 from rl_board_games.training.ricochet_robots_env import RicochetRobotsEnv
@@ -49,6 +49,8 @@ def create_encoder(config: dict):
     elif encoder_config["type"] == "planar":
         # return PlanarEncoder()
         return WallAwarePlanarEncoder()
+    elif encoder_config["type"] == "rgb":
+        return RGBArrayEncoder(scale=encoder_config.get("scale", 20))
     else:
         raise ValueError(f"Unknown encoder type: {encoder_config['type']}")
 
@@ -100,6 +102,8 @@ def main():
     parser = argparse.ArgumentParser(description="Train RL agents on board games")
     parser.add_argument("config", type=str, help="Path to YAML configuration file")
     parser.add_argument("--no-wandb", action="store_true", help="Disable Weights & Biases logging")
+    parser.add_argument("--profile", action="store_true", help="Enable cProfile during training")
+    parser.add_argument("--profile-output", type=str, help="Path to write .prof profile stats")
     args = parser.parse_args()
 
     # Load configuration
@@ -145,6 +149,12 @@ def main():
             eval_freq=training_config["eval_freq"],
             save_freq=training_config["save_freq"],
             eval_episodes=training_config["eval_episodes"],
+            log_freq=training_config.get("log_freq", 1000),
+            rollout_log_freq=training_config.get("rollout_log_freq", 0),
+            rollout_max_steps=training_config.get("rollout_max_steps", 50),
+            rollout_fps=training_config.get("rollout_fps", 2),
+            profile=bool(args.profile or training_config.get("profile", False)),
+            profile_output=args.profile_output or training_config.get("profile_output"),
         )
     finally:
         trainer.close()

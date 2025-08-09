@@ -42,7 +42,9 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
                 board_size=4,
                 num_robots=2,
                 max_walls=8,
-                episodes_per_evaluation=50
+                episodes_per_evaluation=50,
+                board_size_min=4,
+                board_size_max=4,
             ),
             CurriculumLevel(
                 name="Medium",
@@ -52,7 +54,7 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
                 board_size=6,
                 num_robots=2,
                 max_walls=12,
-                episodes_per_evaluation=75
+                episodes_per_evaluation=75,
             ),
             CurriculumLevel(
                 name="Hard",
@@ -62,7 +64,7 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
                 board_size=8,
                 num_robots=3,
                 max_walls=20,
-                episodes_per_evaluation=100
+                episodes_per_evaluation=100,
             ),
             CurriculumLevel(
                 name="Expert",
@@ -72,7 +74,7 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
                 board_size=12,
                 num_robots=4,
                 max_walls=30,
-                episodes_per_evaluation=150
+                episodes_per_evaluation=150,
             ),
             CurriculumLevel(
                 name="Master",
@@ -82,8 +84,8 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
                 board_size=16,
                 num_robots=4,
                 max_walls=40,
-                episodes_per_evaluation=200
-            )
+                episodes_per_evaluation=200,
+            ),
         ]
     
     def __iter__(self) -> Iterator[RicochetRobotsGame]:
@@ -97,61 +99,65 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
                 # Fallback to random generation if lookup fails
                 yield self._generate_fallback_game(current_level)
     
+    def _choose_board_size(self, level: CurriculumLevel) -> int:
+        """Choose a board size within the optional range, else use fixed size."""
+        if level.board_size_min is not None and level.board_size_max is not None:
+            return self.rng.randint(level.board_size_min, level.board_size_max)
+        return level.board_size
+    
     def _generate_game_for_level(self, level: CurriculumLevel) -> RicochetRobotsGame | None:
         """Generate a game matching the specified difficulty level."""
         max_attempts = 1000
         
+        # Sample a candidate board size for this episode
+        board_size = self._choose_board_size(level)
+        
         for _ in range(max_attempts):
-            seed = self.rng.randint(0, 1000000)
+            seed = self.rng.randint(0, 1_000_000)
             
-            # Check if we have difficulty info for this seed
+            # Check if we have difficulty info for this seed and board size
             solve_length = self.difficulty_lookup.get_difficulty(
-                seed, level.board_size, level.num_robots
+                seed, board_size, level.num_robots
             )
             
             if solve_length is not None:
                 # Check if difficulty matches level requirements
                 if level.min_solve_length <= solve_length <= level.max_solve_length:
-                    return self._create_game_from_seed(seed, level)
+                    return self._create_game_from_seed(seed, level, board_size)
             else:
-                # No lookup info available, might need to generate it
-                # For now, skip and try another seed
+                # No lookup info available, try another seed
                 continue
         
         return None  # Could not find suitable game
     
     def _generate_fallback_game(self, level: CurriculumLevel) -> RicochetRobotsGame:
         """Generate a fallback game when lookup fails."""
+        board_size = self._choose_board_size(level)
         for _ in range(self.max_fallback_attempts):
-            seed = self.rng.randint(0, 1000000)
-            game = self._create_game_from_seed(seed, level)
-            
-            # TODO: Could add heuristic difficulty estimation here
-            # For now, just return the game
+            seed = self.rng.randint(0, 1_000_000)
+            game = self._create_game_from_seed(seed, level, board_size)
             return game
-        
         # Last resort: completely random game
-        return self._create_game_from_seed(self.rng.randint(0, 1000000), level)
+        return self._create_game_from_seed(self.rng.randint(0, 1_000_000), level, board_size)
     
-    def _create_game_from_seed(self, seed: int, level: CurriculumLevel) -> RicochetRobotsGame:
+    def _create_game_from_seed(self, seed: int, level: CurriculumLevel, board_size: int | None = None) -> RicochetRobotsGame:
         """Create a game from a seed with specified level parameters."""
         rng = random.Random(seed)
+        size = board_size if board_size is not None else level.board_size
         
         # Generate board with appropriate wall density
         num_walls = min(level.max_walls, rng.randint(level.max_walls // 2, level.max_walls))
-        board = Board.random_walls(size=level.board_size, num_walls=num_walls, rng=rng)
+        board = Board.random_walls(size=size, num_walls=num_walls, rng=rng)
         
         # Create game
         game = RicochetRobotsGame(
             board=board,
             num_robots=level.num_robots,
-            rng=rng
+            rng=rng,
         )
         # Expose the seed that generated this game so that environments
         # can reset the game back to the exact state that was solved by the
-        # curriculum difficulty lookup.  This guarantees that every episode
-        # the board/robots/goal configuration remains solvable within the
-        # desired number of steps.
+        # curriculum difficulty lookup. This guarantees reproducibility.
         game.initial_seed = seed  # type: ignore[attr-defined]
         
         # Store seed for tracking
@@ -177,11 +183,12 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
         max_attempts = count * 10  # Reasonable upper bound
         
         while len(seeds) < count and attempts < max_attempts:
-            seed = self.rng.randint(0, 1000000)
+            board_size = self._choose_board_size(target_level)
+            seed = self.rng.randint(0, 1_000_000)
             attempts += 1
             
             solve_length = self.difficulty_lookup.get_difficulty(
-                seed, target_level.board_size, target_level.num_robots
+                seed, board_size, target_level.num_robots
             )
             
             if solve_length is not None:
@@ -199,9 +206,10 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
         difficulties = []
         
         for _ in range(sample_size):
-            seed = self.rng.randint(0, 1000000)
+            board_size = self._choose_board_size(current_level)
+            seed = self.rng.randint(0, 1_000_000)
             solve_length = self.difficulty_lookup.get_difficulty(
-                seed, current_level.board_size, current_level.num_robots
+                seed, board_size, current_level.num_robots
             )
             if solve_length is not None:
                 difficulties.append(solve_length)
@@ -224,7 +232,7 @@ class RicochetRobotsCurriculum(ProgressiveCurriculum):
             "median_difficulty": difficulties[n // 2],
             "target_range": (current_level.min_solve_length, current_level.max_solve_length),
             "in_range_count": sum(1 for d in difficulties 
-                                if current_level.min_solve_length <= d <= current_level.max_solve_length)
+                                if current_level.min_solve_length <= d <= current_level.max_solve_length),
         }
         
         stats["in_range_percentage"] = (stats["in_range_count"] / n) * 100

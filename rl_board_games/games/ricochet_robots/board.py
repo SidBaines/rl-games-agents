@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import hashlib
 from typing import List, Tuple
 
 import numpy as np
@@ -47,6 +48,20 @@ class Board:
 
     def has_wall(self, x: int, y: int, direction: int) -> bool:
         return bool(self.walls[y, x] & DIR_MASKS[direction])
+
+    def signature(self) -> int:
+        """Return a stable, compact integer signature for walls and size.
+
+        Uses BLAKE2b on the walls bytes and dimensions to avoid collisions
+        across different boards while keeping hashing lightweight.
+        """
+        hasher = hashlib.blake2b(digest_size=8)
+        # Include dimensions explicitly
+        hasher.update(self.width.to_bytes(2, byteorder="little", signed=False))
+        hasher.update(self.height.to_bytes(2, byteorder="little", signed=False))
+        # Include wall bytes
+        hasher.update(self.walls.tobytes())
+        return int.from_bytes(hasher.digest(), byteorder="little", signed=False)
 
     # ---------------------------------------------------------------------
     # Movement helpers

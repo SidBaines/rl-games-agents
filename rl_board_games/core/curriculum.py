@@ -19,6 +19,9 @@ class CurriculumLevel:
     num_robots: int
     max_walls: int
     episodes_per_evaluation: int = 100
+    # Optional range for sampling board sizes to avoid overfitting to a single size
+    board_size_min: Optional[int] = None
+    board_size_max: Optional[int] = None
 
 
 @dataclass

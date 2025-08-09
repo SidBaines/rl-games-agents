@@ -1,7 +1,7 @@
 """Ricochet Robots game implementation."""
 from .game import RicochetRobotsGame, RRGameState
 from .solver_astar import AStarSolver
-from .encoders import FlatArrayEncoder, PlanarEncoder, WallAwarePlanarEncoder
+from .encoders import FlatArrayEncoder, PlanarEncoder, WallAwarePlanarEncoder, RGBArrayEncoder
 
 __all__ = [
     "RicochetRobotsGame",
@@ -10,4 +10,5 @@ __all__ = [
     "FlatArrayEncoder",
     "PlanarEncoder",
     "WallAwarePlanarEncoder",
+    "RGBArrayEncoder",
 ] 

@@ -22,7 +22,7 @@ state = game.reset(seed=0)
 
 # Encoders
 flat_encoder = FlatArrayEncoder()
-planar_encoder = WallAwarePlanarEncoder(board)
+planar_encoder = WallAwarePlanarEncoder()
 
 # %% [markdown]
 """

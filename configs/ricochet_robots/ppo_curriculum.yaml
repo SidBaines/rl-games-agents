@@ -82,6 +82,14 @@ training:
   eval_episodes: 20
   curriculum_update_freq: 100  # Update curriculum every 100 timesteps
   log_freq: 100
+  # Optional: log an agent rollout video to Weights & Biases periodically
+  # Set rollout_log_freq > 0 to enable. Keep infrequent to save storage.
+  # rollout_log_freq: 20000   # log every 20k steps (disabled by default)
+  # rollout_max_steps: 50     # max steps per logged rollout
+  # rollout_fps: 2            # playback fps for the video
+  # Optional: enable CPU profiling for a full breakdown (use sparingly; slows training)
+  # profile: false
+  # profile_output: ./profiles/train_profile.prof
 logging:
   use_wandb: true
   wandb_project: "rl-board-games"
@@ -89,3 +97,21 @@ logging:
 
 checkpoints:
   save_dir: "./checkpoints/"
+
+# Example: switch to alternative A* plan-based curriculum (uncomment to use)
+# curriculum:
+#   type: "astar_plan"
+#   evaluation_episodes: 50
+#   levels:  # PlanCurriculumLevel entries
+#     - name: "R1-L1"
+#       min_solve_length: 0
+#       max_solve_length: 1
+#       success_threshold: 0.90
+#       board_size: 8
+#       num_robots: 4
+#       max_walls: 16
+#       episodes_per_evaluation: 40
+#       board_size_min: 8
+#       board_size_max: 8
+#       max_total_moves: 1
+#       max_robots_moved: 1

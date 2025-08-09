@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 from ...core.game import Game, GameState
 from .board import Board, NORTH, EAST, SOUTH, WEST
+from .rendering import render_rgb
 
 Direction = int  # alias
 Action = Tuple[int, Direction]  # (robot_index, direction)
@@ -21,7 +22,15 @@ class RRGameState(GameState):
     goal: Tuple[int, int]
     goal_robot: int  # index of robot that must reach goal
     move_count: int
-    board: Board
+    # Full Board reference excluded from equality/hash to keep it lightweight
+    board: Board = field(compare=False, hash=False, repr=False)
+    # Compact signature that captures board walls+size for hashing/equality
+    board_sig: int = 0
+
+    def __post_init__(self):
+        # Populate board_sig if not provided
+        if self.board_sig == 0 and isinstance(self.board, Board):
+            object.__setattr__(self, "board_sig", self.board.signature())
 
     @property
     def is_terminal(self) -> bool:
@@ -64,7 +73,13 @@ class RicochetRobotsGame(Game):
         robots = self._random_robot_positions()
         goal_robot = self.rng.randrange(self.num_robots)
         goal = self._random_empty_cell(exclude=robots)
-        self._state = RRGameState(robots=robots, goal=goal, goal_robot=goal_robot, move_count=0, board=self.board)
+        self._state = RRGameState(
+            robots=robots,
+            goal=goal,
+            goal_robot=goal_robot,
+            move_count=0,
+            board=self.board,
+        )
         return self._state
 
     def step(self, action: Action) -> Tuple[RRGameState, float, bool, Dict[str, Any]]:
@@ -179,50 +194,11 @@ class RicochetRobotsGame(Game):
         print("\n".join(rows))
 
     def _render_array(self, st: RRGameState) -> np.ndarray:
-        scale = 20  # pixels per cell
-        h, w = self.board.height * scale, self.board.width * scale
-        img = np.ones((h, w, 3), dtype=np.uint8) * 255  # white background
-
-        # Draw walls (black)
-        for y in range(self.board.height):
-            for x in range(self.board.width):
-                cx, cy = x * scale, y * scale
-                if self.board.has_wall(x, y, NORTH):
-                    img[cy, cx : cx + scale, :] = 0
-                if self.board.has_wall(x, y, WEST):
-                    img[cy : cy + scale, cx, :] = 0
-        # Draw outer south/east walls
-        for x in range(self.board.width):
-            if self.board.has_wall(x, self.board.height - 1, SOUTH):
-                cy = h - 1
-                cx = x * scale
-                img[cy, cx : cx + scale, :] = 0
-        for y in range(self.board.height):
-            if self.board.has_wall(self.board.width - 1, y, EAST):
-                cx = w - 1
-                cy = y * scale
-                img[cy : cy + scale, cx, :] = 0
-
-        # Draw goal cell (green outline)
-        colors = [[255, 0, 0], [0, 0, 255], [255, 255, 0], [0, 255, 255]]
-        gx, gy = st.goal
-        gx_pix, gy_pix = gx * scale, gy * scale
-        goal_color = colors[st.goal_robot % len(colors)]
-        thickness = 2
-        # top border
-        img[gy_pix + 3 : gy_pix + 3 + thickness, gx_pix + 3 : gx_pix + scale - 3, :] = goal_color
-        # bottom border
-        img[gy_pix + scale - 3 - thickness : gy_pix + scale - 3, gx_pix + 3 : gx_pix + scale - 3, :] = goal_color
-        # left border
-        img[gy_pix + 3 : gy_pix + scale - 3, gx_pix + 3 : gx_pix + 3 + thickness, :] = goal_color
-        # right border
-        img[gy_pix + 3 : gy_pix + scale - 3, gx_pix + scale - 3 - thickness : gx_pix + scale - 3, :] = goal_color
-
-        # Draw robots
-        for idx, (x, y) in enumerate(st.robots):
-            cx, cy = x * scale, y * scale
-            color = colors[idx % len(colors)]
-            # goal robot stays same color
-            img[cy + 3 : cy + scale - 3, cx + 3 : cx + scale - 3, :] = color
-
-        return img 
+        # Use shared rendering helper for consistency with encoders
+        return render_rgb(
+            board=self.board,
+            robots=st.robots,
+            goal=st.goal,
+            goal_robot=st.goal_robot,
+            scale=20,
+        ) 
