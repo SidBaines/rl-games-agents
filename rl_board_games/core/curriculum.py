@@ -22,6 +22,8 @@ class CurriculumLevel:
     # Optional range for sampling board sizes to avoid overfitting to a single size
     board_size_min: Optional[int] = None
     board_size_max: Optional[int] = None
+    # Optional per-level cap on episode length. If None, fall back to env default.
+    max_episode_steps: Optional[int] = None
 
 
 @dataclass

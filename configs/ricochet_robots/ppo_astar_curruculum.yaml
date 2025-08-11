@@ -23,7 +23,8 @@ agent:
 
 encoder:
   # type: "planar"
-  type: "flat_array"
+  # type: "flat_array"
+  type: "rgb"
 
 environment:
   max_episode_steps: 100  # Increased for harder levels
@@ -79,13 +80,13 @@ environment:
 training:
   total_timesteps: 100000  # Increased for PPO training
   eval_freq: 100
-  save_freq: 2500
+  save_freq: 25000
   eval_episodes: 100
   curriculum_update_freq: 100  # Update curriculum every 100 timesteps
   log_freq: 100
   # Optional: log an agent rollout video to Weights & Biases periodically
   # Set rollout_log_freq > 0 to enable. Keep infrequent to save storage.
-  rollout_log_freq: 2000   # log every 20k steps (disabled by default)
+  rollout_log_freq: 500   # log every 20k steps (disabled by default)
   rollout_max_steps: 50     # max steps per logged rollout
   rollout_fps: 2            # playback fps for the video
   # Optional: enable CPU profiling for a full breakdown (use sparingly; slows training)
@@ -142,7 +143,7 @@ curriculum:
       max_robots_moved: 1
     - name: "R2-L5"
       min_solve_length: 0
-      max_solve_length: 1
+      max_solve_length: 5
       success_threshold: 0.90
       board_size: 8
       num_robots: 4

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, Dict, Set, Tuple
 
 from ..core.curriculum import ProgressiveCurriculum, CurriculumLevel
 from ..games.ricochet_robots.board import Board
 from ..games.ricochet_robots.game import RicochetRobotsGame, RRGameState
 from ..games.ricochet_robots.solver_astar import AStarSolver
+from ..core.plan_cache import PlanDifficultyCache
 
 
 @dataclass
@@ -36,10 +37,14 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
         rng: Optional[random.Random] = None,
         max_attempts_per_level: int = 2000,
         solver_max_depth: int = 50,
+        plan_cache_dir: str | None = "plan_lookup",
     ) -> None:
         self.levels: List[PlanCurriculumLevel] = levels or self._create_default_levels()
         self.max_attempts_per_level = max_attempts_per_level
         self.solver_max_depth = solver_max_depth
+        self.plan_cache = PlanDifficultyCache(plan_cache_dir) if plan_cache_dir else None
+        # Per-run cache of seeds already served per (board_size, num_robots, level_name)
+        self._session_seen: Dict[Tuple[int, int, str], Set[int]] = {}
         super().__init__(levels=self.levels, difficulty_lookup=None, evaluation_episodes=evaluation_episodes, rng=rng)
 
     # Defaults derived from user examples; board size fixed initially but with ranges retained for flexibility
@@ -177,6 +182,33 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
 
     def _generate_game_for_level(self, level: PlanCurriculumLevel) -> Optional[RicochetRobotsGame]:
         board_size = self._choose_board_size(level)
+
+        # 1) If cache exists, try sampling a matching cached seed first
+        if self.plan_cache is not None:
+            matching = self.plan_cache.get_matching_seeds(
+                board_size=board_size,
+                num_robots=level.num_robots,
+                predicate=lambda feats: (
+                    feats.get("total_moves", 10**9) <= level.max_total_moves
+                    and feats.get("robots_moved", 10**9) <= level.max_robots_moved
+                    and level.min_solve_length <= feats.get("total_moves", 10**9) <= level.max_solve_length
+                ),
+            )
+            if matching:
+                key = (board_size, level.num_robots, level.name)
+                seen = self._session_seen.get(key, set())
+                # Prefer unseen seeds this run
+                candidates = [s for s in matching if s not in seen]
+                if not candidates:
+                    candidates = matching
+                seed = self.rng.choice(candidates)
+                # Mark seen for this run
+                if key not in self._session_seen:
+                    self._session_seen[key] = set()
+                self._session_seen[key].add(seed)
+                return self._create_game_from_seed(seed, level, board_size)
+
+        # 2) Otherwise, sample seeds and solve; record plan features in cache as we go
         attempts = 0
         while attempts < self.max_attempts_per_level:
             attempts += 1
@@ -186,8 +218,23 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
             state = game.reset(seed=seed)
             plan = self._solve_with_timeout(game, state)
             if plan is None:
+                # Cache negative info? We skip to avoid bloating, only store positives
                 continue
-            if self._plan_satisfies(plan, level):
+            total_moves, robots_moved = self._extract_plan_features(plan)
+            if self.plan_cache is not None:
+                self.plan_cache.add(
+                    seed=seed,
+                    board_size=board_size,
+                    num_robots=level.num_robots,
+                    total_moves=total_moves,
+                    robots_moved=robots_moved,
+                )
+            if self._plan_satisfies_features(total_moves, robots_moved, level):
+                # Mark seen for this run
+                key = (board_size, level.num_robots, level.name)
+                if key not in self._session_seen:
+                    self._session_seen[key] = set()
+                self._session_seen[key].add(seed)
                 return game
         return None
 
@@ -213,14 +260,17 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
         except Exception:
             return None
 
-    def _plan_satisfies(self, plan, level: PlanCurriculumLevel) -> bool:
+    def _extract_plan_features(self, plan) -> tuple[int, int]:
+        """Return (total_moves, robots_moved) from a plan list[(robot_idx, dir)]."""
         total_moves = len(plan)
+        robots_moved = len({robot_idx for (robot_idx, _dir) in plan})
+        return total_moves, robots_moved
+
+    def _plan_satisfies_features(self, total_moves: int, robots_moved: int, level: PlanCurriculumLevel) -> bool:
         if total_moves > level.max_total_moves:
             return False
-        moved_robots = {robot_idx for (robot_idx, _dir) in plan}
-        if len(moved_robots) > level.max_robots_moved:
+        if robots_moved > level.max_robots_moved:
             return False
-        # Also respect min/max solve lengths to align with base metrics
         if total_moves < level.min_solve_length or total_moves > level.max_solve_length:
             return False
         return True 

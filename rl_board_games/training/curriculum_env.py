@@ -30,12 +30,17 @@ class CurriculumRicochetRobotsEnv(RicochetRobotsEnv):
         self.curriculum_update_freq = curriculum_update_freq
         self.episode_count = 0
         self.current_game = None
+        # Default max steps if a level does not override it
+        self.default_max_episode_steps = max_episode_steps
         
         # Initialize with first game from curriculum
         self._update_game_from_curriculum()
         
-        # Initialize parent with current game
-        super().__init__(self.current_game, encoder, max_episode_steps)
+        # Initialize parent with current game and the level-specific limit if provided
+        current_level = self.curriculum.get_current_level()
+        level_max_steps = getattr(current_level, "max_episode_steps", None)
+        initial_max_steps = level_max_steps if level_max_steps is not None else self.default_max_episode_steps
+        super().__init__(self.current_game, encoder, initial_max_steps)
     
     def _update_game_from_curriculum(self) -> None:
         """Update the current game from curriculum."""
@@ -53,6 +58,11 @@ class CurriculumRicochetRobotsEnv(RicochetRobotsEnv):
         
         # Update action space if needed (in case number of robots changed)
         self._setup_action_space()
+
+        # Apply per-level max steps if specified; otherwise, keep default
+        level = self.curriculum.get_current_level()
+        level_max_steps = getattr(level, "max_episode_steps", None)
+        self.max_episode_steps = level_max_steps if level_max_steps is not None else self.default_max_episode_steps
     
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Reset environment and potentially update curriculum."""
@@ -118,4 +128,5 @@ class CurriculumRicochetRobotsEnv(RicochetRobotsEnv):
             "num_robots": level.num_robots,
             "difficulty_range": (level.min_solve_length, level.max_solve_length),
             "success_threshold": level.success_threshold,
+            "max_episode_steps": getattr(level, "max_episode_steps", None),
         }

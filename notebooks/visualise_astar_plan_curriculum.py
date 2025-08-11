@@ -103,6 +103,8 @@ obs, info = env.reset()
 print("Reset info:", info)
 print("Obs shape:", obs.shape)
 render_state(env.game, title="Env after reset")
+obs, info = env.reset()
+render_state(env.game, title="Env after second reset")
 
 # Compute A* plan on the reset state and show stats
 solver = AStarSolver(env.ricochet_game, max_depth=50)

@@ -21,15 +21,15 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from rl_board_games.games.ricochet_robots import RicochetRobotsGame, FlatArrayEncoder, PlanarEncoder, WallAwarePlanarEncoder, RGBArrayEncoder
-from rl_board_games.games.ricochet_robots.board import Board
+from rl_board_games.games.ricochet_robots import FlatArrayEncoder, WallAwarePlanarEncoder, RGBArrayEncoder
 from rl_board_games.agents.sb3 import DQNAgent, PPOAgent
 from rl_board_games.training.curriculum_env import CurriculumRicochetRobotsEnv
 from rl_board_games.training.trainer import Trainer
 from rl_board_games.core.persistence import CheckpointManager
 from rl_board_games.core.curriculum import DifficultyLookup, CurriculumLevel
 from rl_board_games.curricula.ricochet_robots_curriculum import RicochetRobotsCurriculum
-from rl_board_games.curricula.astar_plan_curriculum import AStarPlanCurriculum
+from rl_board_games.curricula.astar_plan_curriculum import AStarPlanCurriculum, PlanCurriculumLevel
+from rl_board_games.core.plan_cache import PlanDifficultyCache
 
 
 def create_curriculum_levels(config: dict) -> list[CurriculumLevel]:
@@ -44,7 +44,33 @@ def create_curriculum_levels(config: dict) -> list[CurriculumLevel]:
             board_size=level_config["board_size"],
             num_robots=level_config["num_robots"],
             max_walls=level_config["max_walls"],
-            episodes_per_evaluation=level_config["episodes_per_evaluation"]
+            episodes_per_evaluation=level_config["episodes_per_evaluation"],
+            board_size_min=level_config.get("board_size_min"),
+            board_size_max=level_config.get("board_size_max"),
+            max_episode_steps=level_config.get("max_episode_steps"),
+        )
+        levels.append(level)
+    return levels
+
+
+def create_plan_curriculum_levels(config: dict) -> list[PlanCurriculumLevel]:
+    """Create A* plan curriculum levels from configuration, if provided."""
+    levels: list[PlanCurriculumLevel] = []
+    for level_config in config["curriculum"].get("levels", []):
+        level = PlanCurriculumLevel(
+            name=level_config["name"],
+            min_solve_length=level_config["min_solve_length"],
+            max_solve_length=level_config["max_solve_length"],
+            success_threshold=level_config["success_threshold"],
+            board_size=level_config["board_size"],
+            num_robots=level_config["num_robots"],
+            max_walls=level_config["max_walls"],
+            episodes_per_evaluation=level_config["episodes_per_evaluation"],
+            board_size_min=level_config.get("board_size_min"),
+            board_size_max=level_config.get("board_size_max"),
+            max_total_moves=level_config.get("max_total_moves", 1),
+            max_robots_moved=level_config.get("max_robots_moved", 1),
+            max_episode_steps=level_config.get("max_episode_steps"),
         )
         levels.append(level)
     return levels
@@ -58,7 +84,7 @@ def create_curriculum(config: dict) -> RicochetRobotsCurriculum:
     lookup_dir = curriculum_config.get("difficulty_lookup_dir", "./difficulty_lookup")
     difficulty_lookup = DifficultyLookup(lookup_dir)
     
-    # Create curriculum levels
+    # Create curriculum levels (for base curriculum), and plan levels for A* if needed
     levels = create_curriculum_levels(config)
     
     # Create curriculum by type
@@ -71,15 +97,64 @@ def create_curriculum(config: dict) -> RicochetRobotsCurriculum:
             max_fallback_attempts=curriculum_config.get("max_fallback_attempts", 5),
         )
     elif cur_type == "astar_plan":
-        # For AStarPlan, we ignore DifficultyLookup and reuse level fields plus additional plan constraints
-        # The levels in YAML can include extra fields used by PlanCurriculumLevel; here we pass through base fields
+        plan_levels = create_plan_curriculum_levels(config)
         curriculum = AStarPlanCurriculum(
-            evaluation_episodes=curriculum_config.get("evaluation_episodes", 50)
+            levels=plan_levels if plan_levels else None,
+            evaluation_episodes=curriculum_config.get("evaluation_episodes", 50),
         )
     else:
         raise ValueError(f"Unknown curriculum type: {cur_type}")
     
     return curriculum
+
+
+def _assert_sufficient_plan_cache(config: dict, curriculum: RicochetRobotsCurriculum) -> None:
+    """Check the plan cache has at least N matching seeds per level; raise if not."""
+    curriculum_cfg = config["curriculum"]
+    if curriculum_cfg.get("type") != "astar_plan":
+        return
+
+    min_per_level = int(curriculum_cfg.get("min_cached_seeds_per_level", 5))
+    plan_cache_dir = curriculum_cfg.get("plan_cache_dir", "plan_lookup")
+    cache = PlanDifficultyCache(plan_cache_dir)
+
+    # Use A* plan levels for constraints
+    if hasattr(curriculum, "levels") and curriculum.levels and isinstance(curriculum.levels[0], PlanCurriculumLevel):
+        plan_levels: list[PlanCurriculumLevel] = curriculum.levels  # type: ignore[assignment]
+    else:
+        # Build from config as fallback
+        plan_levels = create_plan_curriculum_levels(config)
+
+    insufficient = []
+    for idx, level in enumerate(plan_levels):
+        # Count across all board sizes allowed by the level
+        def count_for_size(board_size: int) -> int:
+            matches = cache.get_matching_seeds(
+                board_size=board_size,
+                num_robots=int(level.num_robots),
+                predicate=lambda feats: (
+                    feats.get("total_moves", 10**9) <= int(level.max_total_moves)
+                    and feats.get("robots_moved", 10**9) <= int(level.max_robots_moved)
+                    and int(level.min_solve_length) <= feats.get("total_moves", -1) <= int(level.max_solve_length)
+                ),
+            )
+            return len(matches)
+
+        sizes = [int(level.board_size)]
+        if level.board_size_min is not None and level.board_size_max is not None:
+            sizes = list(range(int(level.board_size_min), int(level.board_size_max) + 1))
+
+        total_matches = sum(count_for_size(s) for s in sizes)
+        if total_matches < min_per_level:
+            insufficient.append((idx, level.name, total_matches))
+
+    if insufficient:
+        lines = [
+            "Insufficient plan cache seeds for one or more levels:",
+            *[f"  Level {idx} {name}: {count} < required {min_per_level}" for idx, name, count in insufficient],
+            "Run scripts/generate_plan_cache.py <config> to pre-populate the cache.",
+        ]
+        raise RuntimeError("\n".join(lines))
 
 
 def create_encoder(config: dict):
@@ -186,7 +261,14 @@ def main():
 
     # Create environment
     env = create_environment(curriculum, encoder, config)
-    print(f"Created curriculum environment")
+    print("Created curriculum environment")
+
+    # Verify plan cache sufficiency before training (for astar_plan)
+    try:
+        _assert_sufficient_plan_cache(config, curriculum)
+    except RuntimeError as e:
+        print(str(e))
+        sys.exit(2)
 
     # Create agent
     agent = create_agent(env, encoder, config)
@@ -224,7 +306,7 @@ def main():
         # Start training
         training_config = config["training"]
         
-        print(f"Starting curriculum training...")
+        print("Starting curriculum training...")
         print(f"Total timesteps: {training_config['total_timesteps']}")
         print(f"Initial level: {curriculum.get_current_level().name}")
         
