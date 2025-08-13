@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import hashlib
-from typing import List, Tuple
+from typing import List, Tuple, Iterable, Set
 
 import numpy as np
 
@@ -98,11 +98,304 @@ class Board:
 
     @classmethod
     def random_walls(cls, size: int = 16, num_walls: int = 20, rng: random.Random | None = None) -> "Board":
+        """Generate a board with walls.
+
+        If the board is square, even-sized, and at least 8x8, generate walls
+        using a structured Ricochet Robots layout with seeded randomness.
+        Otherwise, fall back to simple random single-segment walls.
+
+        Note: the num_walls parameter is ignored for structured generation.
+        """
         rng = rng or random.Random()
+        if size >= 8 and size % 2 == 0:
+            return cls.ricochet_walls(size=size, rng=rng)
+        # Fallback legacy random walls for small/odd sizes
         board = cls.empty(size)
         for _ in range(num_walls):
             x = rng.randrange(1, size - 1)
             y = rng.randrange(1, size - 1)
             direction = rng.choice([NORTH, EAST, SOUTH, WEST])
             board.add_wall(x, y, direction)
+        return board
+
+    # ---------------------------------------------------------------------
+    # Structured Ricochet Robots layout
+    # ---------------------------------------------------------------------
+    @classmethod
+    def ricochet_walls(
+        cls,
+        size: int = 16,
+        N: int = 2,
+        M: int = 4,
+        rng: random.Random | None = None,
+    ) -> "Board":
+        """Generate a RR-style board layout following supplied rules.
+
+        Rules implemented (loosely, with safeguards):
+        0) If size < 8, odd, or non-square, falls back to legacy random walls.
+        1) Central 2x2 grid has walls around it.
+        2) In each quarter, place N edge spurs from the board edge (not at exact midline).
+        3) In each quarter, place up to M L-shaped internal wall pairs, as evenly
+           distributed across the 4 orientations as possible, without touching
+           other L-pairs, edge spurs, or the central 2x2 perimeter.
+
+        Seeding: All random choices are driven only by the provided rng.
+        """
+        rng = rng or random.Random()
+        if size < 8 or size % 2 != 0:
+            # Fallback to legacy behavior
+            return cls.random_walls(size=size, num_walls=20, rng=rng)
+
+        board = cls.empty(size)
+
+        # Helpers -----------------------------------------------------------
+        def in_bounds(x: int, y: int) -> bool:
+            return 0 <= x < size and 0 <= y < size
+
+        def chebyshev_neighbors(x: int, y: int) -> Iterable[Tuple[int, int]]:
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    nx, ny = x + dx, y + dy
+                    if in_bounds(nx, ny):
+                        yield (nx, ny)
+
+        def manhattan_neighbors(x: int, y: int) -> Iterable[Tuple[int, int]]:
+            for d in (NORTH, EAST, SOUTH, WEST):
+                nx, ny = x + DX[d], y + DY[d]
+                if in_bounds(nx, ny):
+                    yield (nx, ny)
+
+        mid1 = size // 2 - 1
+        mid2 = size // 2
+
+        # 1) Central 2x2 perimeter walls -----------------------------------
+        # Cells: (mid1, mid1) (mid2, mid1)
+        #        (mid1, mid2) (mid2, mid2)
+        board.add_wall(mid1, mid1, NORTH)
+        board.add_wall(mid1, mid1, WEST)
+        board.add_wall(mid2, mid1, NORTH)
+        board.add_wall(mid2, mid1, EAST)
+        board.add_wall(mid1, mid2, SOUTH)
+        board.add_wall(mid1, mid2, WEST)
+        board.add_wall(mid2, mid2, SOUTH)
+        board.add_wall(mid2, mid2, EAST)
+
+        # Build a forbidden-zone set around the central 2x2 to prevent touching
+        central_cells = {(mid1, mid1), (mid2, mid1), (mid1, mid2), (mid2, mid2)}
+        central_forbidden: Set[Tuple[int, int]] = set()
+        for cx, cy in central_cells:
+            central_forbidden.add((cx, cy))
+            central_forbidden.update(chebyshev_neighbors(cx, cy))
+
+        # Quarter bounding boxes (inclusive ranges)
+        # NW, NE, SW, SE
+        quarters = {
+            "NW": (range(0, mid2), range(0, mid2)),
+            "NE": (range(mid2, size), range(0, mid2)),
+            "SW": (range(0, mid2), range(mid2, size)),
+            "SE": (range(mid2, size), range(mid2, size)),
+        }
+
+        # 2) Edge spurs per quarter ----------------------------------------
+        # Represent a spur as (x, y, dir) placed on a border-adjacent cell
+        edge_spurs: list[Tuple[int, int, int]] = []
+
+        def quarter_edge_candidates(label: str) -> list[Tuple[int, int, int]]:
+            xs, ys = quarters[label]
+            cands: list[Tuple[int, int, int]] = []
+            if label == "NW":
+                # North edge segment for NW half
+                for x in xs:
+                    y = 0
+                    if x in (mid1, mid2):
+                        continue  # avoid exact midline
+                    cands.append((x, y, SOUTH))  # extend inward from north edge
+                # West edge segment for NW half
+                for y in ys:
+                    x = 0
+                    if y in (mid1, mid2):
+                        continue
+                    cands.append((x, y, EAST))
+            elif label == "NE":
+                for x in xs:
+                    y = 0
+                    if x in (mid1, mid2):
+                        continue
+                    cands.append((x, y, SOUTH))
+                for y in ys:
+                    x = size - 1
+                    if y in (mid1, mid2):
+                        continue
+                    cands.append((x, y, WEST))
+            elif label == "SW":
+                for x in xs:
+                    y = size - 1
+                    if x in (mid1, mid2):
+                        continue
+                    cands.append((x, y, NORTH))
+                for y in ys:
+                    x = 0
+                    if y in (mid1, mid2):
+                        continue
+                    cands.append((x, y, EAST))
+            elif label == "SE":
+                for x in xs:
+                    y = size - 1
+                    if x in (mid1, mid2):
+                        continue
+                    cands.append((x, y, NORTH))
+                for y in ys:
+                    x = size - 1
+                    if y in (mid1, mid2):
+                        continue
+                    cands.append((x, y, WEST))
+            # Avoid corners duplication by keeping exactly as generated per quarter
+            return cands
+
+        # Place N spurs per quarter, allowing overlap between spurs is fine
+        # (no explicit rule prohibits spur-spur touching), but ensure uniqueness.
+        placed_spur_cells: Set[Tuple[int, int]] = set()
+        spur_forbidden_for_L: Set[Tuple[int, int]] = set()
+        for label in ("NW", "NE", "SW", "SE"):
+            cands = quarter_edge_candidates(label)
+            rng.shuffle(cands)
+            picks = 0
+            for (x, y, d) in cands:
+                key = (x, y, d)
+                # Avoid placing duplicate walls (same (x,y,dir))
+                # and avoid using the exact same (x,y) twice for variety
+                if (x, y) in placed_spur_cells:
+                    continue
+                board.add_wall(x, y, d)
+                edge_spurs.append((x, y, d))
+                placed_spur_cells.add((x, y))
+                # Mark the two cells that the spur wall separates, plus their neighbors, as forbidden for Ls
+                spur_forbidden_for_L.add((x, y))
+                nx, ny = x + DX[d], y + DY[d]
+                if in_bounds(nx, ny):
+                    spur_forbidden_for_L.add((nx, ny))
+                    # pad by one in Chebyshev
+                    for fx, fy in list(chebyshev_neighbors(x, y)) + list(chebyshev_neighbors(nx, ny)):
+                        spur_forbidden_for_L.add((fx, fy))
+                picks += 1
+                if picks >= N:
+                    break
+
+        # 3) L-shaped wall pairs per quarter --------------------------------
+        # Orientations (pair of directions applied to the same cell):
+        # 0: NORTH+EAST, 1: EAST+SOUTH, 2: SOUTH+WEST, 3: WEST+NORTH
+        L_ORIENTS = [
+            (NORTH, EAST),  # NE
+            (EAST, SOUTH),  # SE
+            (SOUTH, WEST),  # SW
+            (WEST, NORTH),  # NW
+        ]
+
+        def orientation_is_internal(x: int, y: int, orient_idx: int) -> bool:
+            d1, d2 = L_ORIENTS[orient_idx]
+            # Ensure no wall uses the outer board edge
+            if d1 == NORTH and y == 0:
+                return False
+            if d1 == SOUTH and y == size - 1:
+                return False
+            if d1 == WEST and x == 0:
+                return False
+            if d1 == EAST and x == size - 1:
+                return False
+            if d2 == NORTH and y == 0:
+                return False
+            if d2 == SOUTH and y == size - 1:
+                return False
+            if d2 == WEST and x == 0:
+                return False
+            if d2 == EAST and x == size - 1:
+                return False
+            return True
+
+        # Forbidden set initializer for L placements
+        l_forbidden: Set[Tuple[int, int]] = set(central_forbidden)
+        l_forbidden.update(spur_forbidden_for_L)
+
+        def can_place_L(x: int, y: int, orient_idx: int) -> bool:
+            if (x, y) in l_forbidden:
+                return False
+            if (x, y) in central_forbidden:
+                return False
+            if (x, y) in spur_forbidden_for_L:
+                return False
+            if not orientation_is_internal(x, y, orient_idx):
+                return False
+            # Do not let the L touch other Ls: enforce Chebyshev distance >= 2 from existing L centers
+            for nx, ny in chebyshev_neighbors(x, y):
+                if (nx, ny) in l_forbidden:
+                    # l_forbidden also contains padding around placed Ls (we will add padding after placement)
+                    return False
+            return True
+
+        def place_L(x: int, y: int, orient_idx: int) -> None:
+            d1, d2 = L_ORIENTS[orient_idx]
+            board.add_wall(x, y, d1)
+            board.add_wall(x, y, d2)
+            # After placing, forbid this cell and its Chebyshev neighborhood
+            l_forbidden.add((x, y))
+            for fx, fy in chebyshev_neighbors(x, y):
+                l_forbidden.add((fx, fy))
+
+        # Orientation distribution helper per quarter
+        def orientation_sequence(total: int) -> List[int]:
+            base = total // 4
+            rem = total % 4
+            counts = [base] * 4
+            # Distribute remainders deterministically by shuffling orientation order
+            order = [0, 1, 2, 3]
+            rng.shuffle(order)
+            for i in range(rem):
+                counts[order[i]] += 1
+            seq: List[int] = []
+            # Round-robin to avoid clustering
+            # Build per-orientation queues
+            queues: List[List[int]] = [[i] * counts[i] for i in range(4)]
+            # Interleave
+            while any(queues):
+                for i in order:
+                    if queues[i]:
+                        seq.append(queues[i].pop())
+            return seq
+
+        # For each quarter, attempt to place up to M L-pairs
+        for label in ("NW", "NE", "SW", "SE"):
+            xs, ys = quarters[label]
+            seq = orientation_sequence(M)
+
+            # For efficiency, precompute candidate lists per orientation filtered by quarter and static constraints
+            candidates_by_orient: list[list[Tuple[int, int]]] = [[] for _ in range(4)]
+            for y in ys:
+                for x in xs:
+                    # Skip central forbidden area quickly
+                    if (x, y) in central_forbidden:
+                        continue
+                    for oi in range(4):
+                        if orientation_is_internal(x, y, oi):
+                            candidates_by_orient[oi].append((x, y))
+            # Shuffle candidates for each orientation with the rng for reproducibility
+            for lst in candidates_by_orient:
+                rng.shuffle(lst)
+
+            # Greedy placement following the interleaved orientation sequence
+            for oi in seq:
+                placed = False
+                cand_list = candidates_by_orient[oi]
+                # Try candidates until one fits
+                while cand_list:
+                    cx, cy = cand_list.pop()
+                    if can_place_L(cx, cy, oi):
+                        place_L(cx, cy, oi)
+                        placed = True
+                        break
+                if not placed:
+                    # Could not place this orientation instance; continue
+                    continue
+
         return board 
