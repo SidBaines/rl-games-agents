@@ -185,24 +185,38 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
 
         # 1) If cache exists, try sampling a matching cached seed first
         if self.plan_cache is not None:
-            matching = self.plan_cache.get_matching_seeds(
+            # Prefer the per-combination files for faster sampling
+            key = (board_size, level.num_robots, level.name)
+            seen = self._session_seen.get(key, set())
+            sampled = self.plan_cache.sample_seed_by_constraints(
                 board_size=board_size,
                 num_robots=level.num_robots,
-                predicate=lambda feats: (
-                    feats.get("total_moves", 10**9) <= level.max_total_moves
-                    and feats.get("robots_moved", 10**9) <= level.max_robots_moved
-                    and level.min_solve_length <= feats.get("total_moves", 10**9) <= level.max_solve_length
-                ),
+                min_total_moves=level.min_solve_length,
+                max_total_moves=level.max_solve_length,
+                max_robots_moved=level.max_robots_moved,
+                rng=self.rng,
+                avoid_seeds=seen,
             )
-            if matching:
-                key = (board_size, level.num_robots, level.name)
-                seen = self._session_seen.get(key, set())
-                # Prefer unseen seeds this run
-                candidates = [s for s in matching if s not in seen]
-                if not candidates:
-                    candidates = matching
-                seed = self.rng.choice(candidates)
-                # Mark seen for this run
+            if sampled is None:
+                # Fallback to scanning the index with a predicate if combo files are sparse
+                matching = self.plan_cache.get_matching_seeds(
+                    board_size=board_size,
+                    num_robots=level.num_robots,
+                    predicate=lambda feats: (
+                        feats.get("total_moves", 10**9) <= level.max_total_moves
+                        and feats.get("robots_moved", 10**9) <= level.max_robots_moved
+                        and level.min_solve_length <= feats.get("total_moves", 10**9) <= level.max_solve_length
+                    ),
+                )
+                if matching:
+                    candidates = [s for s in matching if s not in seen] or matching
+                    seed = self.rng.choice(candidates)
+                    if key not in self._session_seen:
+                        self._session_seen[key] = set()
+                    self._session_seen[key].add(seed)
+                    return self._create_game_from_seed(seed, level, board_size)
+            else:
+                seed = int(sampled)
                 if key not in self._session_seen:
                     self._session_seen[key] = set()
                 self._session_seen[key].add(seed)
