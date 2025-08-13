@@ -134,7 +134,8 @@ class Board:
         Rules implemented (loosely, with safeguards):
         0) If size < 8, odd, or non-square, falls back to legacy random walls.
         1) Central 2x2 grid has walls around it.
-        2) In each quarter, place N edge spurs from the board edge (not at exact midline).
+        2) In each quarter, place exactly one edge spur on each of its two edges
+           (e.g., NW: one on the north edge and one on the west edge).
         3) In each quarter, place up to M L-shaped internal wall pairs, as evenly
            distributed across the 4 orientations as possible, without touching
            other L-pairs, edge spurs, or the central 2x2 perimeter.
@@ -198,6 +199,13 @@ class Board:
             "SE": (range(mid2, size), range(mid2, size)),
         }
 
+        # Precompute edge cells (board boundary cells have walls)
+        edge_cells: Set[Tuple[int, int]] = set()
+        for y in range(size):
+            for x in range(size):
+                if x == 0 or y == 0 or x == size - 1 or y == size - 1:
+                    edge_cells.add((x, y))
+
         # 2) Edge spurs per quarter ----------------------------------------
         # Represent a spur as (x, y, dir) placed on a border-adjacent cell
         edge_spurs: list[Tuple[int, int, int]] = []
@@ -211,77 +219,116 @@ class Board:
                     y = 0
                     if x in (mid1, mid2):
                         continue  # avoid exact midline
-                    cands.append((x, y, SOUTH))  # extend inward from north edge
+                    cands.append((x, y, EAST))
                 # West edge segment for NW half
                 for y in ys:
                     x = 0
                     if y in (mid1, mid2):
                         continue
-                    cands.append((x, y, EAST))
+                    cands.append((x, y, SOUTH))
             elif label == "NE":
                 for x in xs:
                     y = 0
                     if x in (mid1, mid2):
                         continue
-                    cands.append((x, y, SOUTH))
+                    cands.append((x, y, WEST))
                 for y in ys:
                     x = size - 1
                     if y in (mid1, mid2):
                         continue
-                    cands.append((x, y, WEST))
+                    cands.append((x, y, SOUTH))
             elif label == "SW":
                 for x in xs:
                     y = size - 1
                     if x in (mid1, mid2):
                         continue
-                    cands.append((x, y, NORTH))
+                    cands.append((x, y, EAST))
                 for y in ys:
                     x = 0
                     if y in (mid1, mid2):
                         continue
-                    cands.append((x, y, EAST))
+                    cands.append((x, y, NORTH))
             elif label == "SE":
                 for x in xs:
                     y = size - 1
                     if x in (mid1, mid2):
                         continue
-                    cands.append((x, y, NORTH))
+                    cands.append((x, y, WEST))
                 for y in ys:
                     x = size - 1
                     if y in (mid1, mid2):
                         continue
-                    cands.append((x, y, WEST))
+                    cands.append((x, y, NORTH))
             # Avoid corners duplication by keeping exactly as generated per quarter
             return cands
 
-        # Place N spurs per quarter, allowing overlap between spurs is fine
-        # (no explicit rule prohibits spur-spur touching), but ensure uniqueness.
+        # Place exactly one spur on each edge per quarter
         placed_spur_cells: Set[Tuple[int, int]] = set()
-        spur_forbidden_for_L: Set[Tuple[int, int]] = set()
+        placed_L_centers: Set[Tuple[int, int]] = set()
         for label in ("NW", "NE", "SW", "SE"):
             cands = quarter_edge_candidates(label)
-            rng.shuffle(cands)
-            picks = 0
-            for (x, y, d) in cands:
-                key = (x, y, d)
-                # Avoid placing duplicate walls (same (x,y,dir))
-                # and avoid using the exact same (x,y) twice for variety
-                if (x, y) in placed_spur_cells:
+
+            # Split candidates into the two edges for this quarter
+            if label == "NW":
+                edge_a = [(x, y, d) for (x, y, d) in cands if y == 0 and d == EAST]  # North edge
+                edge_b = [(x, y, d) for (x, y, d) in cands if x == 0 and d == SOUTH]  # West edge
+            elif label == "NE":
+                edge_a = [(x, y, d) for (x, y, d) in cands if y == 0 and d == WEST]          # North edge
+                edge_b = [(x, y, d) for (x, y, d) in cands if x == size - 1 and d == SOUTH]   # East edge
+            elif label == "SW":
+                edge_a = [(x, y, d) for (x, y, d) in cands if y == size - 1 and d == EAST]   # South edge
+                edge_b = [(x, y, d) for (x, y, d) in cands if x == 0 and d == NORTH]          # West edge
+            else:  # "SE"
+                edge_a = [(x, y, d) for (x, y, d) in cands if y == size - 1 and d == WEST]   # South edge
+                edge_b = [(x, y, d) for (x, y, d) in cands if x == size - 1 and d == NORTH]   # East edge
+
+            rng.shuffle(edge_a)
+            rng.shuffle(edge_b)
+
+            # Find a pair with distinct cells and not previously used
+            chosen_a = chosen_b = None
+            found_pair = False
+            for xa, ya, da in edge_a:
+                if (xa, ya) in placed_spur_cells:
                     continue
+                for xb, yb, db in edge_b:
+                    if (xb, yb) in placed_spur_cells:
+                        continue
+                    if xa == xb and ya == yb:
+                        continue
+                    chosen_a = (xa, ya, da)
+                    chosen_b = (xb, yb, db)
+                    found_pair = True
+                    break
+                if found_pair:
+                    break
+
+            if not found_pair:
+                # As a fallback, try the reverse pairing order (in case the above shuffles were unlucky)
+                for xb, yb, db in edge_b:
+                    if (xb, yb) in placed_spur_cells:
+                        continue
+                    for xa, ya, da in edge_a:
+                        if (xa, ya) in placed_spur_cells:
+                            continue
+                        if xa == xb and ya == yb:
+                            continue
+                        chosen_a = (xa, ya, da)
+                        chosen_b = (xb, yb, db)
+                        found_pair = True
+                        break
+                    if found_pair:
+                        break
+
+            if not found_pair:
+                # If still not found, skip placing spurs for this quarter (extremely unlikely)
+                continue
+
+            # Place the two spurs
+            for (x, y, d) in (chosen_a, chosen_b):
                 board.add_wall(x, y, d)
                 edge_spurs.append((x, y, d))
                 placed_spur_cells.add((x, y))
-                # Mark the two cells that the spur wall separates, plus their neighbors, as forbidden for Ls
-                spur_forbidden_for_L.add((x, y))
-                nx, ny = x + DX[d], y + DY[d]
-                if in_bounds(nx, ny):
-                    spur_forbidden_for_L.add((nx, ny))
-                    # pad by one in Chebyshev
-                    for fx, fy in list(chebyshev_neighbors(x, y)) + list(chebyshev_neighbors(nx, ny)):
-                        spur_forbidden_for_L.add((fx, fy))
-                picks += 1
-                if picks >= N:
-                    break
 
         # 3) L-shaped wall pairs per quarter --------------------------------
         # Orientations (pair of directions applied to the same cell):
@@ -314,34 +361,34 @@ class Board:
                 return False
             return True
 
-        # Forbidden set initializer for L placements
-        l_forbidden: Set[Tuple[int, int]] = set(central_forbidden)
-        l_forbidden.update(spur_forbidden_for_L)
+        # Compute Chebyshev-based forbidden cells around anchors that have walls
+        def chebyshev_forbidden() -> Set[Tuple[int, int]]:
+            anchors: Set[Tuple[int, int]] = set()
+            # Any cell with at least one wall counts as an anchor
+            h, w = board.walls.shape
+            for yy in range(h):
+                for xx in range(w):
+                    if board.walls[yy, xx] != 0:
+                        anchors.add((xx, yy))
+            forbidden: Set[Tuple[int, int]] = set()
+            for ax, ay in anchors:
+                forbidden.add((ax, ay))
+                for nx, ny in chebyshev_neighbors(ax, ay):
+                    forbidden.add((nx, ny))
+            return forbidden
 
         def can_place_L(x: int, y: int, orient_idx: int) -> bool:
-            if (x, y) in l_forbidden:
-                return False
-            if (x, y) in central_forbidden:
-                return False
-            if (x, y) in spur_forbidden_for_L:
-                return False
             if not orientation_is_internal(x, y, orient_idx):
                 return False
-            # Do not let the L touch other Ls: enforce Chebyshev distance >= 2 from existing L centers
-            for nx, ny in chebyshev_neighbors(x, y):
-                if (nx, ny) in l_forbidden:
-                    # l_forbidden also contains padding around placed Ls (we will add padding after placement)
-                    return False
+            if (x, y) in chebyshev_forbidden():
+                return False
             return True
 
         def place_L(x: int, y: int, orient_idx: int) -> None:
             d1, d2 = L_ORIENTS[orient_idx]
             board.add_wall(x, y, d1)
             board.add_wall(x, y, d2)
-            # After placing, forbid this cell and its Chebyshev neighborhood
-            l_forbidden.add((x, y))
-            for fx, fy in chebyshev_neighbors(x, y):
-                l_forbidden.add((fx, fy))
+            placed_L_centers.add((x, y))
 
         # Orientation distribution helper per quarter
         def orientation_sequence(total: int) -> List[int]:
