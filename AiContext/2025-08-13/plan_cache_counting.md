@@ -1,0 +1,3 @@
+- Updated `scripts/generate_plan_cache.py` to exclude unsolved placeholder entries (0 total_moves, 0 robots_moved) when counting cached seeds per level. This prevents unsolved games from being counted toward the minimum per-level requirement.
+- Added explicit checks `feats.get("total_moves", 0) > 0` and `feats.get("robots_moved", 0) > 0` in both pre-count and post-fill recount predicates.
+- Also verified `PlanDifficultyCache.load_table` already treats zero/zero entries as placeholders; generator-side guard ensures strict counting behavior. 

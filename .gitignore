@@ -4,3 +4,4 @@ wandb/
 __pycache__/
 rl_board_games.egg-info/
 rlenv/
+plan_lookup/

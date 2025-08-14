@@ -1,0 +1,6 @@
+- Added min constraints for A* plan curriculum levels:
+  - PlanCurriculumLevel now supports `min_total_moves` and `min_robots_moved`.
+  - Sampling and predicate logic updated to enforce mins in combination with solve-length window.
+  - PlanDifficultyCache `sample_seed_by_constraints` now accepts `min_robots_moved` and enumerates combos accordingly.
+  - Updated scripts `generate_plan_cache.py` and `train_curriculum.py` to parse and enforce new fields.
+  - Extended example YAML `configs/ricochet_robots/ppo_astar_curruculum.yaml` to document new fields. 

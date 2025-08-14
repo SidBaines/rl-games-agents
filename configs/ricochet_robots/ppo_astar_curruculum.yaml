@@ -113,8 +113,11 @@ curriculum:
       num_robots: 4
       max_walls: 16
       episodes_per_evaluation: 40
-      board_size_min: 8
-      board_size_max: 8
+      board_size_min: 16
+      board_size_max: 16
+      # New lower bounds (optional)
+      min_total_moves: 1
+      min_robots_moved: 1
       max_total_moves: 1
       max_robots_moved: 1
     - name: "R1-L3"
@@ -125,8 +128,10 @@ curriculum:
       num_robots: 4
       max_walls: 16
       episodes_per_evaluation: 40
-      board_size_min: 8
-      board_size_max: 8
+      board_size_min: 16
+      board_size_max: 16
+      min_total_moves: 2
+      min_robots_moved: 1
       max_total_moves: 3
       max_robots_moved: 1
     - name: "R1-L5"
@@ -137,8 +142,10 @@ curriculum:
       num_robots: 4
       max_walls: 16
       episodes_per_evaluation: 40
-      board_size_min: 8
-      board_size_max: 8
+      board_size_min: 16
+      board_size_max: 16
+      min_total_moves: 4
+      min_robots_moved: 1
       max_total_moves: 5
       max_robots_moved: 1
     - name: "R2-L5"
@@ -149,7 +156,9 @@ curriculum:
       num_robots: 4
       max_walls: 16
       episodes_per_evaluation: 40
-      board_size_min: 8
-      board_size_max: 8
+      board_size_min: 16
+      board_size_max: 16
+      min_total_moves: 1
+      min_robots_moved: 2
       max_total_moves: 5
       max_robots_moved: 2

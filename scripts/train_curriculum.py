@@ -70,6 +70,8 @@ def create_plan_curriculum_levels(config: dict) -> list[PlanCurriculumLevel]:
             board_size_max=level_config.get("board_size_max"),
             max_total_moves=level_config.get("max_total_moves", 1),
             max_robots_moved=level_config.get("max_robots_moved", 1),
+            min_total_moves=level_config.get("min_total_moves", 0),
+            min_robots_moved=level_config.get("min_robots_moved", 0),
             max_episode_steps=level_config.get("max_episode_steps"),
         )
         levels.append(level)
@@ -133,9 +135,10 @@ def _assert_sufficient_plan_cache(config: dict, curriculum: RicochetRobotsCurric
                 board_size=board_size,
                 num_robots=int(level.num_robots),
                 predicate=lambda feats: (
-                    feats.get("total_moves", 10**9) <= int(level.max_total_moves)
+                    feats.get("total_moves", 10**9) <= int(min(level.max_total_moves, level.max_solve_length))
+                    and feats.get("total_moves", -1) >= int(max(level.min_total_moves, level.min_solve_length))
                     and feats.get("robots_moved", 10**9) <= int(level.max_robots_moved)
-                    and int(level.min_solve_length) <= feats.get("total_moves", -1) <= int(level.max_solve_length)
+                    and feats.get("robots_moved", -1) >= int(level.min_robots_moved)
                 ),
             )
             return len(matches)

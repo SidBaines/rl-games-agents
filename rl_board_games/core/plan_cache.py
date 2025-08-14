@@ -41,13 +41,22 @@ class PlanDifficultyCache:
         if path.exists():
             with path.open("r") as f:
                 data = json.load(f)
-                table = {
-                    int(k): {
-                        "total_moves": int(v.get("total_moves", 0)),
-                        "robots_moved": int(v.get("robots_moved", 0)),
-                    }
-                    for k, v in data.items()
-                }
+                # Do NOT default missing fields to zero. Preserve only present, valid ints.
+                # Also, treat legacy placeholder entries {"total_moves": 0, "robots_moved": 0}
+                # as unknown/placeholder so they are ignored by matchers.
+                table: Dict[int, Dict[str, int]] = {}
+                for k, v in data.items():
+                    seed_key = int(k)
+                    features: Dict[str, int] = {}
+                    if isinstance(v, dict):
+                        if "total_moves" in v and isinstance(v["total_moves"], int):
+                            features["total_moves"] = int(v["total_moves"])
+                        if "robots_moved" in v and isinstance(v["robots_moved"], int):
+                            features["robots_moved"] = int(v["robots_moved"])
+                    # If both values are present but equal to 0, treat as placeholder and drop them
+                    if features.get("total_moves") == 0 and features.get("robots_moved") == 0:
+                        features = {}
+                    table[seed_key] = features
                 self._cache[key] = table
                 return table
         return {}
@@ -97,7 +106,11 @@ class PlanDifficultyCache:
         sample_seed_by_constraints which uses per-combination files.
         """
         table = self.load_table(board_size, num_robots)
-        return [seed for seed, feats in table.items() if predicate(feats)]
+        return [
+            seed
+            for seed, feats in table.items()
+            if ("total_moves" in feats and "robots_moved" in feats and predicate(feats))
+        ]
 
     def entries(self, board_size: int, num_robots: int) -> Iterable[Tuple[int, Dict[str, int]]]:
         table = self.load_table(board_size, num_robots)
@@ -109,6 +122,7 @@ class PlanDifficultyCache:
         num_robots: int,
         min_total_moves: int,
         max_total_moves: int,
+        min_robots_moved: int,
         max_robots_moved: int,
         rng: Optional[random.Random] = None,
         avoid_seeds: Optional[Set[int]] = None,
@@ -123,7 +137,7 @@ class PlanDifficultyCache:
 
         available_combos: List[Tuple[int, int, List[int]]] = []
         for moves in range(int(min_total_moves), int(max_total_moves) + 1):
-            for robots in range(0, int(max_robots_moved) + 1):
+            for robots in range(int(min_robots_moved), int(max_robots_moved) + 1):
                 combo_path = self._get_combo_filename(board_size, num_robots, moves, robots)
                 if not combo_path.exists():
                     continue

@@ -20,6 +20,8 @@ class PlanCurriculumLevel(CurriculumLevel):
     """
     max_total_moves: int = 1
     max_robots_moved: int = 1
+    min_total_moves: int = 0
+    min_robots_moved: int = 0
 
 
 class AStarPlanCurriculum(ProgressiveCurriculum):
@@ -59,8 +61,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=16,
                 episodes_per_evaluation=40,
-                board_size_min=8,
-                board_size_max=8,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=1,
                 max_robots_moved=1,
             ),
@@ -73,8 +75,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=20,
                 episodes_per_evaluation=50,
-                board_size_min=8,
-                board_size_max=8,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=3,
                 max_robots_moved=1,
             ),
@@ -87,8 +89,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=20,
                 episodes_per_evaluation=50,
-                board_size_min=8,
-                board_size_max=8,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=3,
                 max_robots_moved=2,
             ),
@@ -101,8 +103,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=24,
                 episodes_per_evaluation=60,
-                board_size_min=10,
-                board_size_max=10,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=5,
                 max_robots_moved=1,
             ),
@@ -115,8 +117,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=28,
                 episodes_per_evaluation=60,
-                board_size_min=10,
-                board_size_max=10,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=10,
                 max_robots_moved=1,
             ),
@@ -129,8 +131,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=32,
                 episodes_per_evaluation=80,
-                board_size_min=12,
-                board_size_max=12,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=5,
                 max_robots_moved=2,
             ),
@@ -143,8 +145,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=36,
                 episodes_per_evaluation=100,
-                board_size_min=12,
-                board_size_max=12,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=10,
                 max_robots_moved=2,
             ),
@@ -157,8 +159,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 num_robots=4,
                 max_walls=40,
                 episodes_per_evaluation=120,
-                board_size_min=14,
-                board_size_max=14,
+                board_size_min=16,
+                board_size_max=16,
                 max_total_moves=7,
                 max_robots_moved=3,
             ),
@@ -191,8 +193,9 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
             sampled = self.plan_cache.sample_seed_by_constraints(
                 board_size=board_size,
                 num_robots=level.num_robots,
-                min_total_moves=level.min_solve_length,
-                max_total_moves=level.max_solve_length,
+                min_total_moves=max(level.min_total_moves, level.min_solve_length),
+                max_total_moves=min(level.max_total_moves, level.max_solve_length),
+                min_robots_moved=level.min_robots_moved,
                 max_robots_moved=level.max_robots_moved,
                 rng=self.rng,
                 avoid_seeds=seen,
@@ -203,9 +206,11 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                     board_size=board_size,
                     num_robots=level.num_robots,
                     predicate=lambda feats: (
-                        feats.get("total_moves", 10**9) <= level.max_total_moves
+                        ("total_moves" in feats and "robots_moved" in feats)
+                        and feats.get("total_moves", 10**9) <= min(level.max_total_moves, level.max_solve_length)
                         and feats.get("robots_moved", 10**9) <= level.max_robots_moved
-                        and level.min_solve_length <= feats.get("total_moves", 10**9) <= level.max_solve_length
+                        and feats.get("robots_moved", -1) >= level.min_robots_moved
+                        and max(level.min_total_moves, level.min_solve_length) <= feats.get("total_moves", -1) <= min(level.max_total_moves, level.max_solve_length)
                     ),
                 )
                 if matching:
@@ -281,10 +286,11 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
         return total_moves, robots_moved
 
     def _plan_satisfies_features(self, total_moves: int, robots_moved: int, level: PlanCurriculumLevel) -> bool:
-        if total_moves > level.max_total_moves:
+        # Apply both feature-specific mins and the general solve-length window
+        effective_min_moves = max(level.min_total_moves, level.min_solve_length)
+        effective_max_moves = min(level.max_total_moves, level.max_solve_length)
+        if total_moves < effective_min_moves or total_moves > effective_max_moves:
             return False
-        if robots_moved > level.max_robots_moved:
-            return False
-        if total_moves < level.min_solve_length or total_moves > level.max_solve_length:
+        if robots_moved < level.min_robots_moved or robots_moved > level.max_robots_moved:
             return False
         return True 

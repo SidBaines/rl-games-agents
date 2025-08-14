@@ -57,7 +57,30 @@ curriculum = AStarPlanCurriculum()
 encoder = WallAwarePlanarEncoder()
 
 # Peek at first N games from curriculum (using current level)
-N = 3
+N = 10
+samples: List[RicochetRobotsGame] = []
+iter_cur = iter(curriculum)
+for i in range(N):
+    game = next(iter_cur)
+    # Reset deterministically to the seed used during generation
+    seed = getattr(game, "initial_seed", None)
+    state = game.reset(seed=seed)
+    samples.append(game)
+
+    # Render and solve with A*
+    img = game.render(state, mode="rgb_array")
+    show_rgb(img, title=f"Sample {i+1}: {curriculum.get_current_level().name} ({game.board.width}x{game.board.height})")
+
+
+
+
+# %%
+# Build A* plan curriculum with defaults
+curriculum = AStarPlanCurriculum()
+encoder = WallAwarePlanarEncoder()
+
+# Peek at first N games from curriculum (using current level)
+N = 1
 samples: List[RicochetRobotsGame] = []
 iter_cur = iter(curriculum)
 for i in range(N):
@@ -159,3 +182,4 @@ for lvl in levels:
 
 # %%
 print("Done.") 
+# %%
