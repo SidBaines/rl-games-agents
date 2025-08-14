@@ -89,6 +89,29 @@ class Board:
             cx, cy = nx, ny
         return cx, cy
 
+    def l_centers(self) -> List[Tuple[int, int]]:
+        """Return positions that form an L (exactly two orthogonal walls on the cell).
+
+        A cell is considered an L-center if and only if it has exactly two
+        walls and they are adjacent directions (N+E, E+S, S+W, or W+N).
+        """
+        centers: List[Tuple[int, int]] = []
+        for y in range(self.height):
+            for x in range(self.width):
+                mask = int(self.walls[y, x])
+                if mask == 0:
+                    continue
+                has_n = bool(mask & DIR_MASKS[NORTH])
+                has_e = bool(mask & DIR_MASKS[EAST])
+                has_s = bool(mask & DIR_MASKS[SOUTH])
+                has_w = bool(mask & DIR_MASKS[WEST])
+                count = int(has_n) + int(has_e) + int(has_s) + int(has_w)
+                if count != 2:
+                    continue
+                if (has_n and has_e) or (has_e and has_s) or (has_s and has_w) or (has_w and has_n):
+                    centers.append((x, y))
+        return centers
+
     # ---------------------------------------------------------------------
     # Factory helpers
     # ---------------------------------------------------------------------

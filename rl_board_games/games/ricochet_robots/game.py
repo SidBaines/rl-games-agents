@@ -72,7 +72,12 @@ class RicochetRobotsGame(Game):
             self.rng.seed(seed)
         robots = self._random_robot_positions()
         goal_robot = self.rng.randrange(self.num_robots)
-        goal = self._random_empty_cell(exclude=robots)
+        # Prefer placing goal on an L-center cell
+        lcs = [pos for pos in self.board.l_centers() if pos not in robots]
+        if lcs:
+            goal = self.rng.choice(lcs)
+        else:
+            goal = self._random_empty_cell(exclude=robots)
         self._state = RRGameState(
             robots=robots,
             goal=goal,

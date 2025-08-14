@@ -1,0 +1,2 @@
+- Fixed spur direction selection in rl_board_games/games/ricochet_robots/board.py: quarter_edge_candidates to place walls on intended edges (vertical EAST/WEST for north/south edges, horizontal NORTH/SOUTH for west/east edges).
+- Ensure exactly one spur per edge per quadrant in ricochet_walls; updated selection logic in board.py and docstring.
