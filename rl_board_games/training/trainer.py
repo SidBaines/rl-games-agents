@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
+from datetime import datetime
+import json
+import csv
 
 import wandb
 from stable_baselines3.common.callbacks import BaseCallback
@@ -54,6 +57,7 @@ class Trainer:
         wandb_project: str = "rl-board-games",
         wandb_run_name: Optional[str] = None,
         curriculum_update_freq: int = 100,
+        run_dir: Optional[Path] = None,
     ):
         self.agent = agent
         self.env = env
@@ -61,6 +65,18 @@ class Trainer:
         self.checkpoint_manager = checkpoint_manager
         self.use_wandb = use_wandb
         self.curriculum_update_freq = curriculum_update_freq
+        self.run_start_datetime_str: str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Metrics captured when wandb is disabled
+        self._metrics_history: List[Dict[str, Any]] = []
+        # Offline run directory (only used when wandb is off)
+        self.run_dir: Optional[Path] = None
+        if not self.use_wandb:
+            self.run_dir = Path(run_dir) if run_dir is not None else Path("tmp") / self.run_start_datetime_str
+            self.run_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                print(f"[offline] Saving metrics and plots under: {self.run_dir}")
+            except Exception:
+                pass
         
         # Track curriculum episodes
         self._curriculum_episodes = []
@@ -186,6 +202,14 @@ class Trainer:
                 if self.use_wandb:
                     wandb.log({"time/eval_total_wall_s": eval_s}, step=timesteps_trained)
                 print(f"[timing] eval_total_wall_s={eval_s:.3f}s")
+                # Record metrics for offline plotting when wandb is disabled
+                if not self.use_wandb:
+                    self._record_eval_metrics(eval_metrics)
+                    # Also regenerate plots now so they update live during training
+                    try:
+                        self._export_offline_plots()
+                    except Exception as e:
+                        print(f"[warn] Failed to export offline plots during training: {e}")
                 
                 # Update curriculum based on evaluation results
                 if self.curriculum is not None:
@@ -218,6 +242,9 @@ class Trainer:
         
         # Final evaluation and save
         final_metrics = self._evaluate(eval_episodes, timesteps_trained)
+        # Record metrics for offline plots
+        if not self.use_wandb:
+            self._record_eval_metrics(final_metrics)
         if self.curriculum is not None:
             self._update_curriculum_progress(final_metrics)
         self._save_checkpoint(timesteps_trained, final=True)
@@ -229,6 +256,13 @@ class Trainer:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             profiler.dump_stats(str(out_path))
             print(f"Saved cProfile stats to {out_path}")
+
+        # Offline plots if wandb is disabled
+        if not self.use_wandb:
+            try:
+                self._export_offline_plots()
+            except Exception as e:
+                print(f"[warn] Failed to export offline plots: {e}")
 
     def _evaluate(self, num_episodes: int, timestep: int) -> Dict[str, float]:
         """Evaluate the agent."""
@@ -393,6 +427,12 @@ class Trainer:
     
     def close(self) -> None:
         """Clean up resources."""
+        # As a safety net, attempt to export plots on close when offline
+        if not self.use_wandb:
+            try:
+                self._export_offline_plots()
+            except Exception as e:
+                print(f"[warn] Failed to export offline plots on close: {e}")
         if self.use_wandb:
             wandb.finish()
 
@@ -456,3 +496,90 @@ class Trainer:
         except Exception as e:
             # Never break training due to logging errors
             print(f"[warn] Failed to log rollout at step {timestep}: {e}") 
+
+    # -------------------------
+    # Offline logging utilities
+    # -------------------------
+    def _record_eval_metrics(self, metrics: Dict[str, Any]) -> None:
+        """Append evaluation metrics for offline plotting when wandb is off."""
+        self._metrics_history.append(dict(metrics))
+        # Persist incrementally so that interruptions still leave artifacts
+        try:
+            self._persist_metrics_files()
+        except Exception:
+            pass
+
+    def _export_offline_plots(self) -> None:
+        """Export collected metrics as images and CSV/JSON when wandb is disabled."""
+        if self.use_wandb:
+            return
+        if self.run_dir is None:
+            return
+        # Ensure latest metrics are persisted
+        self._persist_metrics_files()
+
+        # Nothing to plot
+        if not self._metrics_history:
+            print(f"No evaluation metrics collected; skipping offline plots.")
+            return
+
+        # Lazy import matplotlib and force non-interactive backend
+        try:
+            import matplotlib
+            matplotlib.use("Agg")  # Ensure headless
+            import matplotlib.pyplot as plt
+        except Exception as e:
+            print(f"[warn] matplotlib unavailable, cannot render plots: {e}")
+            return
+
+        # Build x/y series
+        xs = [m.get("timestep", 0) for m in self._metrics_history]
+        mean_rewards = [m.get("eval/mean_reward") for m in self._metrics_history]
+        mean_lengths = [m.get("eval/mean_length") for m in self._metrics_history]
+        success_rates = [m.get("eval/success_rate") for m in self._metrics_history]
+
+        fig, axes = plt.subplots(3, 1, figsize=(10, 12), constrained_layout=True)
+        axes[0].plot(xs, mean_rewards, marker="o")
+        axes[0].set_title("Evaluation Mean Reward")
+        axes[0].set_xlabel("Timesteps")
+        axes[0].set_ylabel("Mean Reward")
+
+        axes[1].plot(xs, mean_lengths, marker="o", color="tab:orange")
+        axes[1].set_title("Evaluation Mean Episode Length")
+        axes[1].set_xlabel("Timesteps")
+        axes[1].set_ylabel("Steps")
+
+        axes[2].plot(xs, success_rates, marker="o", color="tab:green")
+        axes[2].set_title("Evaluation Success Rate")
+        axes[2].set_xlabel("Timesteps")
+        axes[2].set_ylabel("Success Rate")
+        axes[2].set_ylim(0.0, 1.0)
+
+        # Save images
+        png_path = self.run_dir / "metrics.png"
+        pdf_path = self.run_dir / "metrics.pdf"
+        fig.suptitle(f"Training Metrics (Started {self.run_start_datetime_str})")
+        fig.savefig(png_path)
+        try:
+            fig.savefig(pdf_path)
+        except Exception:
+            pass
+        plt.close(fig)
+        print(f"Saved offline metrics to {png_path}")
+
+    def _persist_metrics_files(self) -> None:
+        """Write metrics.json and metrics.csv snapshots to the run directory."""
+        if self.run_dir is None:
+            return
+        # JSON
+        (self.run_dir / "metrics.json").write_text(json.dumps(self._metrics_history, indent=2))
+        # CSV
+        if not self._metrics_history:
+            return
+        csv_path = self.run_dir / "metrics.csv"
+        fieldnames = sorted({k for m in self._metrics_history for k in m.keys()})
+        with csv_path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for m in self._metrics_history:
+                writer.writerow(m)

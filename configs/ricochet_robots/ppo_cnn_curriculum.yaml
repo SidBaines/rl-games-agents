@@ -1,0 +1,145 @@
+# PPO + CNN policy curriculum config for Ricochet Robots
+
+game:
+  type: "ricochet_robots"
+  board_size: 16
+  num_robots: 4
+  reward_per_move: -1.0
+  reward_goal: 100.0
+
+agent:
+  type: "ppo"
+  policy: "CnnPolicy"
+  learning_rate: 0.0003
+  n_steps: 1024
+  batch_size: 128
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  verbose: 0
+  policy_kwargs:
+    normalize_images: false
+
+encoder:
+  # Choose one of the image-like encoders for CNN inputs
+  # type: "planar"   # (C, H, W) planes: robots, goal, walls
+  type: "rgb"       # (3, H, W) normalized image
+  scale: 20         # pixels per cell for rgb encoder
+
+environment:
+  max_episode_steps: 100
+  curriculum_update_freq: 1
+
+curriculum:
+  type: "astar_plan"
+  evaluation_episodes: 50
+  levels:  # PlanCurriculumLevel entries
+    - name: "R1-L1"
+      min_solve_length: 1
+      max_solve_length: 1
+      success_threshold: 0.90
+      board_size: 8
+      num_robots: 4
+      max_walls: 16
+      episodes_per_evaluation: 40
+      board_size_min: 16
+      board_size_max: 16
+      # New lower bounds (optional)
+      # min_total_moves: 1
+      min_robots_moved: 1
+      # max_total_moves: 1
+      max_robots_moved: 1
+    - name: "R1-L2"
+      min_solve_length: 1
+      max_solve_length: 2
+      success_threshold: 0.90
+      board_size: 8
+      num_robots: 4
+      max_walls: 16
+      episodes_per_evaluation: 40
+      board_size_min: 16
+      board_size_max: 16
+      # New lower bounds (optional)
+      # min_total_moves: 1
+      min_robots_moved: 1
+      # max_total_moves: 2
+      max_robots_moved: 1
+    - name: "R1-L3"
+      min_solve_length: 2
+      max_solve_length: 3
+      success_threshold: 0.90
+      board_size: 8
+      num_robots: 4
+      max_walls: 16
+      episodes_per_evaluation: 40
+      board_size_min: 16
+      board_size_max: 16
+      # min_total_moves: 2
+      min_robots_moved: 1
+      # max_total_moves: 3
+      max_robots_moved: 1
+    - name: "R1-L5"
+      min_solve_length: 4
+      max_solve_length: 5
+      success_threshold: 0.90
+      board_size: 8
+      num_robots: 4
+      max_walls: 16
+      episodes_per_evaluation: 40
+      board_size_min: 16
+      board_size_max: 16
+      # min_total_moves: 4
+      min_robots_moved: 1
+      # max_total_moves: 5
+      max_robots_moved: 1
+    - name: "R2-L3"
+      min_solve_length: 2
+      max_solve_length: 3
+      success_threshold: 0.90
+      board_size: 8
+      num_robots: 4
+      max_walls: 16
+      episodes_per_evaluation: 40
+      board_size_min: 16
+      board_size_max: 16
+      # min_total_moves: 1
+      min_robots_moved: 2
+      # max_total_moves: 5
+      max_robots_moved: 2
+    - name: "R2-L5"
+      min_solve_length: 4
+      max_solve_length: 5
+      success_threshold: 0.90
+      board_size: 8
+      num_robots: 4
+      max_walls: 16
+      episodes_per_evaluation: 40
+      board_size_min: 16
+      board_size_max: 16
+      # min_total_moves: 4
+      min_robots_moved: 2
+      # max_total_moves: 5
+      max_robots_moved: 2
+
+training:
+  total_timesteps: 300000
+  eval_freq: 10000
+  save_freq: 50000
+  eval_episodes: 20
+  curriculum_update_freq: 100
+  log_freq: 100
+  profile: false
+
+logging:
+  use_wandb: true
+  wandb_project: "rl-board-games"
+  wandb_run_name: "ppo-cnn-ricochet-curriculum"
+
+checkpoints: 
+  save_dir: "./checkpoints/"
+
+

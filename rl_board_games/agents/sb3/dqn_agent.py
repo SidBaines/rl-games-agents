@@ -16,6 +16,8 @@ class DQNAgent(SB3Agent):
         self,
         env,
         encoder: Encoder,
+        policy: str = "MlpPolicy",
+        policy_kwargs: Dict[str, Any] | None = None,
         learning_rate: float = 1e-4,
         buffer_size: int = 1000000,
         learning_starts: int = 50000,
@@ -32,8 +34,9 @@ class DQNAgent(SB3Agent):
         **kwargs
     ):
         model = DQN(
-            "MlpPolicy",
+            policy,
             env,
+            policy_kwargs=policy_kwargs or {},
             learning_rate=learning_rate,
             buffer_size=buffer_size,
             learning_starts=learning_starts,

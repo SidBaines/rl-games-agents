@@ -52,9 +52,7 @@ def load_plan_levels_from_config(config: dict) -> Tuple[List[PlanCurriculumLevel
             episodes_per_evaluation=level_cfg["episodes_per_evaluation"],
             board_size_min=level_cfg.get("board_size_min"),
             board_size_max=level_cfg.get("board_size_max"),
-            max_total_moves=level_cfg.get("max_total_moves", 1),
             max_robots_moved=level_cfg.get("max_robots_moved", 1),
-            min_total_moves=level_cfg.get("min_total_moves", 0),
             min_robots_moved=level_cfg.get("min_robots_moved", 0),
             max_episode_steps=level_cfg.get("max_episode_steps"),
         )
@@ -98,9 +96,7 @@ def extract_plan_features(plan) -> Tuple[int, int]:
 def satisfies(level: PlanCurriculumLevel, total_moves: int, robots_moved: int) -> bool:
     if total_moves == 0 and robots_moved == 0:
         return False
-    effective_min_moves = max(int(level.min_total_moves), int(level.min_solve_length))
-    effective_max_moves = min(int(level.max_total_moves), int(level.max_solve_length))
-    if total_moves < effective_min_moves or total_moves > effective_max_moves:
+    if total_moves < int(level.min_solve_length) or total_moves > int(level.max_solve_length):
         return False
     if robots_moved < int(level.min_robots_moved) or robots_moved > int(level.max_robots_moved):
         return False
@@ -129,10 +125,10 @@ def populate_cache_for_level(
                 ("total_moves" in feats and "robots_moved" in feats)
                 and feats.get("total_moves", 0) > 0
                 and feats.get("robots_moved", 0) > 0
-                and feats.get("total_moves", 10**9) <= int(min(level.max_total_moves, level.max_solve_length))
+                and feats.get("total_moves", 10**9) <= int(level.max_solve_length)
                 and feats.get("robots_moved", 10**9) <= int(level.max_robots_moved)
                 and feats.get("robots_moved", -1) >= int(level.min_robots_moved)
-                and int(max(level.min_total_moves, level.min_solve_length)) <= feats.get("total_moves", -1) <= int(min(level.max_total_moves, level.max_solve_length))
+                and int(level.min_solve_length) <= feats.get("total_moves", -1) <= int(level.max_solve_length)
             ),
         )
         needed = max(0, min_count - len(existing))
@@ -178,10 +174,10 @@ def populate_cache_for_level(
                 ("total_moves" in feats and "robots_moved" in feats)
                 and feats.get("total_moves", 0) > 0
                 and feats.get("robots_moved", 0) > 0
-                and feats.get("total_moves", 10**9) <= int(min(level.max_total_moves, level.max_solve_length))
+                and feats.get("total_moves", 10**9) <= int(level.max_solve_length)
                 and feats.get("robots_moved", 10**9) <= int(level.max_robots_moved)
                 and feats.get("robots_moved", -1) >= int(level.min_robots_moved)
-                and int(max(level.min_total_moves, level.min_solve_length)) <= feats.get("total_moves", -1) <= int(min(level.max_total_moves, level.max_solve_length))
+                and int(level.min_solve_length) <= feats.get("total_moves", -1) <= int(level.max_solve_length)
             ),
         )
         total_found += len(existing)
@@ -194,7 +190,7 @@ def main():
     parser.add_argument("config", type=str, help="Path to YAML configuration file")
     parser.add_argument("--min-per-level", type=int, default=30, help="Minimum seeds per level to populate")
     parser.add_argument("--max-attempts-per-level", type=int, default=5000, help="Max attempts per level")
-    parser.add_argument("--solver-max-depth", type=int, default=15, help="A* solver max depth")
+    parser.add_argument("--solver-max-depth", type=int, default=10, help="A* solver max depth")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed for reproducibility")
     args = parser.parse_args()
 

@@ -147,9 +147,11 @@ class RicochetRobotsGame(Game):
 
     def _random_robot_positions(self) -> Tuple[Tuple[int, int], ...]:
         positions: List[Tuple[int, int]] = []
+        central_grid = ((x, y) for x in range(self.board.width//2 - 1, self.board.width//2 + 1) for y in range(self.board.height//2 - 1, self.board.height//2 + 1))
         while len(positions) < self.num_robots:
             pos = (self.rng.randrange(self.board.width), self.rng.randrange(self.board.height))
-            if pos not in positions:
+            # Don't place robots inside the central 2x2 grid
+            if (pos not in positions) and (pos not in central_grid):
                 positions.append(pos)
         return tuple(positions)
 

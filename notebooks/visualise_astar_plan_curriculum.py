@@ -23,6 +23,64 @@ from rl_board_games.curricula.astar_plan_curriculum import AStarPlanCurriculum, 
 
 # %% [markdown]
 """
+## Optional: configure curriculum via YAML
+
+Set `CONFIG_PATH` to a YAML config to build the A* curriculum from file. Leave as `None`
+to use the built-in defaults.
+"""
+
+# %%
+from pathlib import Path
+import yaml
+
+CONFIG_PATH: str | None = None  # e.g., "configs/ricochet_robots/ppo_astar_curruculum2.yaml"
+CONFIG_PATH: str | None = "/Users/sidbaines/Documents/Code/20250716_tmp/configs/ricochet_robots/ppo_astar_curruculum2.yaml"
+
+
+def build_astar_curriculum_from_config(config_path: str | None) -> AStarPlanCurriculum:
+    if not config_path:
+        return AStarPlanCurriculum()
+
+    cfg_path = Path(config_path)
+    if not cfg_path.exists():
+        print(f"Config not found at {cfg_path}, falling back to defaults")
+        return AStarPlanCurriculum()
+
+    with cfg_path.open() as f:
+        config = yaml.safe_load(f)
+
+    curriculum_cfg = (config or {}).get("curriculum", {})
+    if curriculum_cfg.get("type") != "astar_plan":
+        print("Config curriculum.type is not 'astar_plan'; using defaults")
+        return AStarPlanCurriculum()
+
+    levels: list[PlanCurriculumLevel] = []
+    for level_cfg in curriculum_cfg.get("levels", []):
+        level = PlanCurriculumLevel(
+            name=level_cfg["name"],
+            min_solve_length=level_cfg["min_solve_length"],
+            max_solve_length=level_cfg["max_solve_length"],
+            success_threshold=level_cfg["success_threshold"],
+            board_size=level_cfg["board_size"],
+            num_robots=level_cfg["num_robots"],
+            max_walls=level_cfg["max_walls"],
+            episodes_per_evaluation=level_cfg["episodes_per_evaluation"],
+            board_size_min=level_cfg.get("board_size_min"),
+            board_size_max=level_cfg.get("board_size_max"),
+            max_robots_moved=level_cfg.get("max_robots_moved", 1),
+            min_robots_moved=level_cfg.get("min_robots_moved", 1),
+            max_episode_steps=level_cfg.get("max_episode_steps"),
+        )
+        levels.append(level)
+
+    return AStarPlanCurriculum(
+        levels=levels or None,
+        evaluation_episodes=curriculum_cfg.get("evaluation_episodes", 50),
+        plan_cache_dir=curriculum_cfg.get("plan_cache_dir", "plan_lookup"),
+    )
+
+# %% [markdown]
+"""
 ## Helpers
 """
 
@@ -52,12 +110,12 @@ def plan_stats(plan) -> tuple[int, int]:
 """
 
 # %%
-# Build A* plan curriculum with defaults
-curriculum = AStarPlanCurriculum()
+# Build A* plan curriculum (optionally from CONFIG_PATH)
+curriculum = build_astar_curriculum_from_config(CONFIG_PATH)
 encoder = WallAwarePlanarEncoder()
 
 # Peek at first N games from curriculum (using current level)
-N = 10
+N = 1
 samples: List[RicochetRobotsGame] = []
 iter_cur = iter(curriculum)
 for i in range(N):
@@ -75,8 +133,8 @@ for i in range(N):
 
 
 # %%
-# Build A* plan curriculum with defaults
-curriculum = AStarPlanCurriculum()
+# Build A* plan curriculum (optionally from CONFIG_PATH)
+curriculum = build_astar_curriculum_from_config(CONFIG_PATH)
 encoder = WallAwarePlanarEncoder()
 
 # Peek at first N games from curriculum (using current level)
@@ -167,7 +225,7 @@ Visualize one sample per level, reporting A* plan length and number of robots mo
 levels = curriculum.levels
 print("A* Plan Curriculum levels:")
 for lvl in levels:
-    print(f"- {lvl.name}: size {lvl.board_size_min or lvl.board_size}..{lvl.board_size_max or lvl.board_size}, max_total_moves={getattr(lvl, 'max_total_moves', '?')}, max_robots_moved={getattr(lvl, 'max_robots_moved', '?')}")
+    print(f"- {lvl.name}: size {lvl.board_size_min or lvl.board_size}..{lvl.board_size_max or lvl.board_size}, max_solve_length={getattr(lvl, 'max_solve_length', '?')}, max_robots_moved={getattr(lvl, 'max_robots_moved', '?')}")
 
 print("\nSampling one game per level:")
 for lvl in levels:

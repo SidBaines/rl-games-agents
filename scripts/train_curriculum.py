@@ -68,9 +68,7 @@ def create_plan_curriculum_levels(config: dict) -> list[PlanCurriculumLevel]:
             episodes_per_evaluation=level_config["episodes_per_evaluation"],
             board_size_min=level_config.get("board_size_min"),
             board_size_max=level_config.get("board_size_max"),
-            max_total_moves=level_config.get("max_total_moves", 1),
             max_robots_moved=level_config.get("max_robots_moved", 1),
-            min_total_moves=level_config.get("min_total_moves", 0),
             min_robots_moved=level_config.get("min_robots_moved", 0),
             max_episode_steps=level_config.get("max_episode_steps"),
         )
@@ -135,8 +133,8 @@ def _assert_sufficient_plan_cache(config: dict, curriculum: RicochetRobotsCurric
                 board_size=board_size,
                 num_robots=int(level.num_robots),
                 predicate=lambda feats: (
-                    feats.get("total_moves", 10**9) <= int(min(level.max_total_moves, level.max_solve_length))
-                    and feats.get("total_moves", -1) >= int(max(level.min_total_moves, level.min_solve_length))
+                    feats.get("total_moves", 10**9) <= int(level.max_solve_length)
+                    and feats.get("total_moves", -1) >= int(level.min_solve_length)
                     and feats.get("robots_moved", 10**9) <= int(level.max_robots_moved)
                     and feats.get("robots_moved", -1) >= int(level.min_robots_moved)
                 ),
@@ -189,11 +187,19 @@ def create_environment(curriculum: RicochetRobotsCurriculum, encoder, config: di
 def create_agent(env, encoder, config: dict):
     """Create agent instance from config."""
     agent_config = config["agent"]
+    # Gather policy kwargs and set sensible defaults for image encoders
+    policy_kwargs = dict(agent_config.get("policy_kwargs", {}))
+    enc_type = (config.get("encoder", {}).get("type") or "").lower()
+    if enc_type in {"planar", "rgb"} and "normalize_images" not in policy_kwargs:
+        # Our encoders already output float32 in [0,1], so disable SB3 image normalization
+        policy_kwargs["normalize_images"] = False
     
     if agent_config["type"] == "dqn":
         return DQNAgent(
             env=env,
             encoder=encoder,
+            policy=agent_config.get("policy", _infer_default_policy(config)),
+            policy_kwargs=policy_kwargs,
             learning_rate=agent_config["learning_rate"],
             buffer_size=agent_config["buffer_size"],
             learning_starts=agent_config["learning_starts"],
@@ -208,6 +214,8 @@ def create_agent(env, encoder, config: dict):
         return PPOAgent(
             env=env,
             encoder=encoder,
+            policy=agent_config.get("policy", _infer_default_policy(config)),
+            policy_kwargs=policy_kwargs,
             learning_rate=agent_config.get("learning_rate", 3e-4),
             n_steps=agent_config.get("n_steps", 2048),
             batch_size=agent_config.get("batch_size", 64),
@@ -216,6 +224,19 @@ def create_agent(env, encoder, config: dict):
         )
     else:
         raise ValueError(f"Unknown agent type: {agent_config['type']}")
+
+
+def _infer_default_policy(config: dict) -> str:
+    """Choose a sensible SB3 policy based on encoder type.
+
+    - For image-like encoders (planar, rgb): use CnnPolicy
+    - For flat vectors: use MlpPolicy
+    """
+    enc = config.get("encoder", {})
+    enc_type = (enc.get("type") or "").lower()
+    if enc_type in {"planar", "rgb"}:
+        return "CnnPolicy"
+    return "MlpPolicy"
 
 
 def main():
@@ -293,7 +314,8 @@ def main():
         use_wandb=use_wandb,
         wandb_project=logging_config["wandb_project"],
         wandb_run_name=f"{logging_config['wandb_run_name']}-{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        curriculum_update_freq=config["training"].get("curriculum_update_freq", 100)
+        curriculum_update_freq=config["training"].get("curriculum_update_freq", 100),
+        run_dir=Path("tmp") / datetime.datetime.now().strftime("%Y%m%d_%H%M%S") if not use_wandb else None,
     )
 
     # Resume from checkpoint if requested

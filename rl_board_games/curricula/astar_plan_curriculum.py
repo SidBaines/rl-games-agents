@@ -18,10 +18,8 @@ class PlanCurriculumLevel(CurriculumLevel):
     In addition to base fields, this level constrains the maximum total plan length
     and the maximum number of distinct robots used in the A* solution.
     """
-    max_total_moves: int = 1
     max_robots_moved: int = 1
-    min_total_moves: int = 0
-    min_robots_moved: int = 0
+    min_robots_moved: int = 1
 
 
 class AStarPlanCurriculum(ProgressiveCurriculum):
@@ -38,7 +36,7 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
         evaluation_episodes: int = 50,
         rng: Optional[random.Random] = None,
         max_attempts_per_level: int = 2000,
-        solver_max_depth: int = 50,
+        solver_max_depth: int = 10,
         plan_cache_dir: str | None = "plan_lookup",
     ) -> None:
         self.levels: List[PlanCurriculumLevel] = levels or self._create_default_levels()
@@ -54,7 +52,7 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
         return [
             PlanCurriculumLevel(
                 name="R1-L1",
-                min_solve_length=0,
+                min_solve_length=1,
                 max_solve_length=1,
                 success_threshold=0.90,
                 board_size=8,
@@ -63,12 +61,12 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=40,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=1,
                 max_robots_moved=1,
+                min_robots_moved=1,
             ),
             PlanCurriculumLevel(
                 name="R1-L3",
-                min_solve_length=0,
+                min_solve_length=2,
                 max_solve_length=3,
                 success_threshold=0.85,
                 board_size=8,
@@ -77,12 +75,12 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=50,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=3,
                 max_robots_moved=1,
+                min_robots_moved=1,
             ),
             PlanCurriculumLevel(
                 name="R<=2-L3",
-                min_solve_length=0,
+                min_solve_length=2,
                 max_solve_length=3,
                 success_threshold=0.80,
                 board_size=8,
@@ -91,12 +89,12 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=50,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=3,
                 max_robots_moved=2,
+                min_robots_moved=2,
             ),
             PlanCurriculumLevel(
                 name="R1-L5",
-                min_solve_length=0,
+                min_solve_length=4,
                 max_solve_length=5,
                 success_threshold=0.75,
                 board_size=10,
@@ -105,12 +103,12 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=60,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=5,
                 max_robots_moved=1,
+                min_robots_moved=1,
             ),
             PlanCurriculumLevel(
                 name="R1-L10",
-                min_solve_length=0,
+                min_solve_length=6,
                 max_solve_length=10,
                 success_threshold=0.70,
                 board_size=10,
@@ -119,12 +117,12 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=60,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=10,
                 max_robots_moved=1,
+                min_robots_moved=1,
             ),
             PlanCurriculumLevel(
                 name="R<=2-L5",
-                min_solve_length=0,
+                min_solve_length=1,
                 max_solve_length=5,
                 success_threshold=0.65,
                 board_size=12,
@@ -133,12 +131,12 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=80,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=5,
                 max_robots_moved=2,
+                min_robots_moved=2,
             ),
             PlanCurriculumLevel(
                 name="R<=2-L10",
-                min_solve_length=0,
+                min_solve_length=6,
                 max_solve_length=10,
                 success_threshold=0.60,
                 board_size=12,
@@ -147,12 +145,12 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=100,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=10,
                 max_robots_moved=2,
+                min_robots_moved=2,
             ),
             PlanCurriculumLevel(
                 name="R<=3-L7",
-                min_solve_length=0,
+                min_solve_length=1,
                 max_solve_length=7,
                 success_threshold=0.55,
                 board_size=14,
@@ -161,8 +159,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 episodes_per_evaluation=120,
                 board_size_min=16,
                 board_size_max=16,
-                max_total_moves=7,
                 max_robots_moved=3,
+                min_robots_moved=3,
             ),
         ]
 
@@ -193,8 +191,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
             sampled = self.plan_cache.sample_seed_by_constraints(
                 board_size=board_size,
                 num_robots=level.num_robots,
-                min_total_moves=max(level.min_total_moves, level.min_solve_length),
-                max_total_moves=min(level.max_total_moves, level.max_solve_length),
+                min_total_moves=level.min_solve_length,
+                max_total_moves=level.max_solve_length,
                 min_robots_moved=level.min_robots_moved,
                 max_robots_moved=level.max_robots_moved,
                 rng=self.rng,
@@ -207,10 +205,10 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                     num_robots=level.num_robots,
                     predicate=lambda feats: (
                         ("total_moves" in feats and "robots_moved" in feats)
-                        and feats.get("total_moves", 10**9) <= min(level.max_total_moves, level.max_solve_length)
+                        and feats.get("total_moves", 10**9) <= level.max_solve_length
                         and feats.get("robots_moved", 10**9) <= level.max_robots_moved
                         and feats.get("robots_moved", -1) >= level.min_robots_moved
-                        and max(level.min_total_moves, level.min_solve_length) <= feats.get("total_moves", -1) <= min(level.max_total_moves, level.max_solve_length)
+                        and level.min_solve_length <= feats.get("total_moves", -1) <= level.max_solve_length
                     ),
                 )
                 if matching:
@@ -286,10 +284,8 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
         return total_moves, robots_moved
 
     def _plan_satisfies_features(self, total_moves: int, robots_moved: int, level: PlanCurriculumLevel) -> bool:
-        # Apply both feature-specific mins and the general solve-length window
-        effective_min_moves = max(level.min_total_moves, level.min_solve_length)
-        effective_max_moves = min(level.max_total_moves, level.max_solve_length)
-        if total_moves < effective_min_moves or total_moves > effective_max_moves:
+        # Apply the general solve-length window only
+        if total_moves < level.min_solve_length or total_moves > level.max_solve_length:
             return False
         if robots_moved < level.min_robots_moved or robots_moved > level.max_robots_moved:
             return False

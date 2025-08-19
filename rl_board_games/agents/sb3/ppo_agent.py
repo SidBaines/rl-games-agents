@@ -16,6 +16,8 @@ class PPOAgent(SB3Agent):
         self,
         env,
         encoder: Encoder,
+        policy: str = "MlpPolicy",
+        policy_kwargs: Dict[str, Any] | None = None,
         learning_rate: float = 3e-4,
         n_steps: int = 2048,
         batch_size: int = 64,
@@ -30,8 +32,9 @@ class PPOAgent(SB3Agent):
         **kwargs
     ):
         model = PPO(
-            "MlpPolicy",
+            policy,
             env,
+            policy_kwargs=policy_kwargs or {},
             learning_rate=learning_rate,
             n_steps=n_steps,
             batch_size=batch_size,
