@@ -16,6 +16,7 @@ from pathlib import Path
 import datetime
 
 import yaml
+import importlib
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -23,6 +24,7 @@ sys.path.insert(0, str(project_root))
 
 from rl_board_games.games.ricochet_robots import FlatArrayEncoder, WallAwarePlanarEncoder, RGBArrayEncoder
 from rl_board_games.agents.sb3 import DQNAgent, PPOAgent
+from rl_board_games.agents.sb3.feature_extractors import SmallBoardCNN
 from rl_board_games.training.curriculum_env import CurriculumRicochetRobotsEnv
 from rl_board_games.training.trainer import Trainer
 from rl_board_games.core.persistence import CheckpointManager
@@ -193,6 +195,17 @@ def create_agent(env, encoder, config: dict):
     if enc_type in {"planar", "rgb"} and "normalize_images" not in policy_kwargs:
         # Our encoders already output float32 in [0,1], so disable SB3 image normalization
         policy_kwargs["normalize_images"] = False
+
+    # If features_extractor_class is provided as a string path in YAML, resolve it to the class object
+    fx_key = "features_extractor_class"
+    if fx_key in policy_kwargs and isinstance(policy_kwargs[fx_key], str):
+        dotted: str = policy_kwargs[fx_key]
+        try:
+            module_path, class_name = dotted.rsplit(".", 1)
+            module = importlib.import_module(module_path)
+            policy_kwargs[fx_key] = getattr(module, class_name)
+        except Exception as e:
+            raise RuntimeError(f"Could not resolve features_extractor_class '{dotted}': {e}")
     
     if agent_config["type"] == "dqn":
         return DQNAgent(
@@ -211,6 +224,11 @@ def create_agent(env, encoder, config: dict):
             verbose=agent_config.get("verbose", 0),
         )
     elif agent_config["type"] == "ppo":
+        # If using a CNN policy, prefer our small-board extractor unless the user overrode it
+        if agent_config.get("policy", _infer_default_policy(config)) == "CnnPolicy":
+            policy_kwargs.setdefault("features_extractor_class", SmallBoardCNN)
+            # Allow features_dim override via policy_kwargs; default to 256
+            policy_kwargs.setdefault("features_extractor_kwargs", {"features_dim": 256})
         return PPOAgent(
             env=env,
             encoder=encoder,

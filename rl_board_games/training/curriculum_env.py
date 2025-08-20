@@ -23,7 +23,7 @@ class CurriculumRicochetRobotsEnv(RicochetRobotsEnv):
         self,
         curriculum: ProgressiveCurriculum,
         encoder: Encoder,
-        max_episode_steps: int = 100,
+        max_episode_steps: int = 7,
         curriculum_update_freq: int = 1,
     ):
         self.curriculum = curriculum

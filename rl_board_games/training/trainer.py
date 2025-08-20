@@ -107,6 +107,21 @@ class Trainer:
                 
         return config
 
+    def _get_log_step(self, fallback_step: int) -> int:
+        """Return a unified step index for logging.
+
+        Prefer the underlying SB3 model's num_timesteps so that all logs
+        (callback, training, evaluation) use the same monotonically increasing
+        counter. Fall back to the provided step if unavailable.
+        """
+        try:
+            model = self.agent.get_model() if hasattr(self.agent, 'get_model') else None
+            if model is not None and hasattr(model, 'num_timesteps'):
+                return int(model.num_timesteps)
+        except Exception:
+            pass
+        return int(fallback_step)
+
     def train(
         self,
         total_timesteps: int = 100000,
@@ -177,7 +192,8 @@ class Trainer:
             }
             print(f"[timing] train_chunk_s={train_chunk_s:.3f}s | per_step_ms={(train_chunk_s/max(chunk_size,1))*1000.0:.3f}")
             if self.use_wandb:
-                wandb.log(train_timing, step=timesteps_trained)
+                log_step = self._get_log_step(timesteps_trained)
+                wandb.log(train_timing, step=log_step)
             
             # Optional: log a rollout video/images to wandb
             if (
@@ -186,21 +202,23 @@ class Trainer:
                 and timesteps_trained % rollout_log_freq == 0
             ):
                 t_rollout_start = perf_counter()
-                self._log_rollout(timestep=timesteps_trained, max_steps=rollout_max_steps, fps=rollout_fps)
+                log_step = self._get_log_step(timesteps_trained)
+                self._log_rollout(timestep=log_step, max_steps=rollout_max_steps, fps=rollout_fps)
                 rollout_s = perf_counter() - t_rollout_start
                 # Also log how long the rollout logging took
                 if self.use_wandb:
-                    wandb.log({"time/rollout_log_s": rollout_s}, step=timesteps_trained)
+                    wandb.log({"time/rollout_log_s": rollout_s}, step=log_step)
                 print(f"[timing] rollout_log_s={rollout_s:.3f}s")
             
             # Evaluate
             if eval_freq > 0 and timesteps_trained % eval_freq == 0:
                 t_eval_start = perf_counter()
-                eval_metrics = self._evaluate(eval_episodes, timesteps_trained)
+                log_step = self._get_log_step(timesteps_trained)
+                eval_metrics = self._evaluate(eval_episodes, log_step)
                 eval_s = perf_counter() - t_eval_start
                 # Log wallclock for evaluation wrapper
                 if self.use_wandb:
-                    wandb.log({"time/eval_total_wall_s": eval_s}, step=timesteps_trained)
+                    wandb.log({"time/eval_total_wall_s": eval_s}, step=log_step)
                 print(f"[timing] eval_total_wall_s={eval_s:.3f}s")
                 # Record metrics for offline plotting when wandb is disabled
                 if not self.use_wandb:
@@ -217,16 +235,17 @@ class Trainer:
                     self._update_curriculum_progress(eval_metrics)
                     cur_update_s = perf_counter() - t_cur_update
                     if self.use_wandb:
-                        wandb.log({"time/curriculum_update_s": cur_update_s}, step=timesteps_trained)
+                        wandb.log({"time/curriculum_update_s": cur_update_s}, step=log_step)
                     print(f"[timing] curriculum_update_s={cur_update_s:.3f}s")
                 
             # Save checkpoint
             if save_freq > 0 and timesteps_trained % save_freq == 0:
                 t_ckpt = perf_counter()
+                log_step = self._get_log_step(timesteps_trained)
                 self._save_checkpoint(timesteps_trained)
                 ckpt_s = perf_counter() - t_ckpt
                 if self.use_wandb:
-                    wandb.log({"time/checkpoint_save_s": ckpt_s}, step=timesteps_trained)
+                    wandb.log({"time/checkpoint_save_s": ckpt_s}, step=log_step)
                 print(f"[timing] checkpoint_save_s={ckpt_s:.3f}s")
                 
                 # Save curriculum state
@@ -235,13 +254,14 @@ class Trainer:
                     self._save_curriculum_state(timesteps_trained)
                     cur_save_s = perf_counter() - t_cur_save
                     if self.use_wandb:
-                        wandb.log({"time/curriculum_state_save_s": cur_save_s}, step=timesteps_trained)
+                        wandb.log({"time/curriculum_state_save_s": cur_save_s}, step=log_step)
                     print(f"[timing] curriculum_state_save_s={cur_save_s:.3f}s")
                 
         print("Training completed!")
         
         # Final evaluation and save
-        final_metrics = self._evaluate(eval_episodes, timesteps_trained)
+        final_log_step = self._get_log_step(timesteps_trained)
+        final_metrics = self._evaluate(eval_episodes, final_log_step)
         # Record metrics for offline plots
         if not self.use_wandb:
             self._record_eval_metrics(final_metrics)
