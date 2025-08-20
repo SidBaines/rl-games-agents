@@ -78,6 +78,9 @@ class RicochetRobotsGame(Game):
             goal = self.rng.choice(lcs)
         else:
             goal = self._random_empty_cell(exclude=robots)
+            # Exclude robots and the central 2x2 grid
+            goal = self._random_empty_cell(exclude=robots + (self.board.width//2, self.board.height//2) + (self.board.width//2, self.board.height//2 - 1) + (self.board.width//2 - 1, self.board.height//2) + (self.board.width//2 - 1, self.board.height//2 - 1))
+         
         self._state = RRGameState(
             robots=robots,
             goal=goal,

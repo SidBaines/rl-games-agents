@@ -239,13 +239,15 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 continue
             total_moves, robots_moved = self._extract_plan_features(plan)
             if self.plan_cache is not None:
-                self.plan_cache.add(
-                    seed=seed,
-                    board_size=board_size,
-                    num_robots=level.num_robots,
-                    total_moves=total_moves,
-                    robots_moved=robots_moved,
-                )
+                # Avoid polluting cache with zero-length plans
+                if total_moves > 0 and robots_moved > 0:
+                    self.plan_cache.add(
+                        seed=seed,
+                        board_size=board_size,
+                        num_robots=level.num_robots,
+                        total_moves=total_moves,
+                        robots_moved=robots_moved,
+                    )
             if self._plan_satisfies_features(total_moves, robots_moved, level):
                 # Mark seen for this run
                 key = (board_size, level.num_robots, level.name)

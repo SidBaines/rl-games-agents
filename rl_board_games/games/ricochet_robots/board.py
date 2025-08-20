@@ -89,12 +89,16 @@ class Board:
             cx, cy = nx, ny
         return cx, cy
 
-    def l_centers(self) -> List[Tuple[int, int]]:
+    def l_centers(self, exclude_central_2x2: bool = True) -> List[Tuple[int, int]]:
         """Return positions that form an L (exactly two orthogonal walls on the cell).
 
         A cell is considered an L-center if and only if it has exactly two
         walls and they are adjacent directions (N+E, E+S, S+W, or W+N).
         """
+        if exclude_central_2x2:
+            exclude = {(self.width//2, self.height//2), (self.width//2, self.height//2 - 1), (self.width//2 - 1, self.height//2), (self.width//2 - 1, self.height//2 - 1)}
+        else:
+            exclude = set()
         centers: List[Tuple[int, int]] = []
         for y in range(self.height):
             for x in range(self.width):
@@ -109,7 +113,8 @@ class Board:
                 if count != 2:
                     continue
                 if (has_n and has_e) or (has_e and has_s) or (has_s and has_w) or (has_w and has_n):
-                    centers.append((x, y))
+                    if (x, y) not in exclude:
+                        centers.append((x, y))
         return centers
 
     # ---------------------------------------------------------------------

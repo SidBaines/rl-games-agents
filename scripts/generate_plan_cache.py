@@ -154,14 +154,25 @@ def populate_cache_for_level(
             total_moves, robots_moved = extract_plan_features(plan)
             print(f"Seed {seed}: total_moves={total_moves}, robots_moved={robots_moved}")
 
-            # Always record the solved plan in the cache to avoid wasted compute
-            cache.add(
-                seed=seed,
-                board_size=int(board_size),
-                num_robots=int(level.num_robots),
-                total_moves=int(total_moves),
-                robots_moved=int(robots_moved),
-            )
+            if 0:
+                # Always record the solved plan in the cache to avoid wasted compute
+                cache.add(
+                    seed=seed,
+                    board_size=int(board_size),
+                    num_robots=int(level.num_robots),
+                    total_moves=int(total_moves),
+                    robots_moved=int(robots_moved),
+                )
+            else:
+                # Record only non-zero plans in the cache to avoid 0-move pollution
+                if total_moves > 0 and robots_moved > 0:
+                    cache.add(
+                        seed=seed,
+                        board_size=int(board_size),
+                        num_robots=int(level.num_robots),
+                        total_moves=int(total_moves),
+                        robots_moved=int(robots_moved),
+                    )
 
             # Count towards the level only if constraints satisfied
             if satisfies(level, total_moves, robots_moved):
