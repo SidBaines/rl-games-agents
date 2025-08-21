@@ -11,7 +11,7 @@ Run in Jupyter or as a script. Requires matplotlib.
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List
+from typing import List, Optional
 
 from rl_board_games.games.ricochet_robots import (
     RicochetRobotsGame,
@@ -33,11 +33,12 @@ to use the built-in defaults.
 from pathlib import Path
 import yaml
 
-CONFIG_PATH: str | None = None  # e.g., "configs/ricochet_robots/ppo_astar_curruculum2.yaml"
-CONFIG_PATH: str | None = "/Users/sidbaines/Documents/Code/20250716_tmp/configs/ricochet_robots/ppo_astar_curruculum2.yaml"
+# CONFIG_PATH: str | None = None  # e.g., "configs/ricochet_robots/ppo_astar_curruculum2.yaml"
+# CONFIG_PATH: str | None = "/Users/sidbaines/Documents/Code/20250716_tmp/configs/ricochet_robots/ppo_cnn_curriculum.yaml"
+CONFIG_PATH: Optional[str] = "../configs/ricochet_robots/ppo_cnn_curriculum.yaml"
 
 
-def build_astar_curriculum_from_config(config_path: str | None) -> AStarPlanCurriculum:
+def build_astar_curriculum_from_config(config_path: Optional[str]) -> AStarPlanCurriculum:
     if not config_path:
         return AStarPlanCurriculum()
 

@@ -214,16 +214,36 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
                 if matching:
                     candidates = [s for s in matching if s not in seen] or matching
                     seed = self.rng.choice(candidates)
-                    if key not in self._session_seen:
-                        self._session_seen[key] = set()
-                    self._session_seen[key].add(seed)
-                    return self._create_game_from_seed(seed, level, board_size)
+                    # Revalidate cached seed under current level parameters before accepting
+                    game = self._create_game_from_seed(seed, level, board_size)
+                    state = game.reset(seed=seed)
+                    plan = self._solve_with_timeout(game, state)
+                    if plan is not None:
+                        total_moves, robots_moved = self._extract_plan_features(plan)
+                        if self._plan_satisfies_features(total_moves, robots_moved, level):
+                            if key not in self._session_seen:
+                                self._session_seen[key] = set()
+                            self._session_seen[key].add(seed)
+                            return game
+                        else:
+                            print(f"Plan does not satisfy features #1: total_moves={total_moves}, robots_moved={robots_moved}, level={level}")
+                # If no matching or revalidation failed, fall through to fresh sampling
             else:
                 seed = int(sampled)
-                if key not in self._session_seen:
-                    self._session_seen[key] = set()
-                self._session_seen[key].add(seed)
-                return self._create_game_from_seed(seed, level, board_size)
+                # Revalidate cached seed under current level parameters before accepting
+                game = self._create_game_from_seed(seed, level, board_size)
+                state = game.reset(seed=seed)
+                plan = self._solve_with_timeout(game, state)
+                if plan is not None:
+                    total_moves, robots_moved = self._extract_plan_features(plan)
+                    if self._plan_satisfies_features(total_moves, robots_moved, level):
+                        if key not in self._session_seen:
+                            self._session_seen[key] = set()
+                        self._session_seen[key].add(seed)
+                        return game
+                    else:
+                        print(f"Plan does not satisfy features #2: total_moves={total_moves}, robots_moved={robots_moved}, level={level}")
+                # If revalidation fails, continue to on-the-fly sampling below
 
         # 2) Otherwise, sample seeds and solve; record plan features in cache as we go
         attempts = 0
@@ -265,8 +285,14 @@ class AStarPlanCurriculum(ProgressiveCurriculum):
 
     def _create_game_from_seed(self, seed: int, level: PlanCurriculumLevel, board_size: int) -> RicochetRobotsGame:
         rng = random.Random(seed)
-        num_walls = min(level.max_walls, rng.randint(level.max_walls // 2, level.max_walls))
-        board = Board.random_walls(size=board_size, num_walls=num_walls, rng=rng)
+        # Avoid consuming RNG before structured generation (size>=8 and even),
+        # because Board.random_walls ignores num_walls in that path but relies on rng.
+        # For non-structured sizes, draw a randomized wall count as before.
+        if board_size >= 8 and board_size % 2 == 0:
+            board = Board.random_walls(size=board_size, num_walls=level.max_walls, rng=rng)
+        else:
+            num_walls = min(level.max_walls, rng.randint(level.max_walls // 2, level.max_walls))
+            board = Board.random_walls(size=board_size, num_walls=num_walls, rng=rng)
         game = RicochetRobotsGame(board=board, num_robots=level.num_robots, rng=rng)
         game.initial_seed = seed  # type: ignore[attr-defined]
         return game

@@ -78,13 +78,18 @@ def choose_board_sizes(level: PlanCurriculumLevel) -> List[int]:
 
 
 def create_game_from_seed(seed: int, level: PlanCurriculumLevel, board_size: int) -> RicochetRobotsGame:
-    rng = random.Random(seed)
-    # Use up to max_walls but randomize to avoid overfitting to one density
-    max_walls = int(level.max_walls)
-    num_walls = min(max_walls, rng.randint(max_walls // 2, max_walls))
-    board = Board.random_walls(size=int(board_size), num_walls=int(num_walls), rng=rng)
-    game = RicochetRobotsGame(board=board, num_robots=int(level.num_robots), rng=rng)
-    return game
+	rng = random.Random(seed)
+	# For structured generation (size>=8 and even), do NOT draw an extra randint
+	# before building the board, since Board.random_walls ignores num_walls there
+	# and relies on rng state. For fallback small/odd sizes, keep randomized count.
+	if int(board_size) >= 8 and int(board_size) % 2 == 0:
+		board = Board.random_walls(size=int(board_size), num_walls=int(level.max_walls), rng=rng)
+	else:
+		max_walls = int(level.max_walls)
+		num_walls = min(max_walls, rng.randint(max_walls // 2, max_walls))
+		board = Board.random_walls(size=int(board_size), num_walls=int(num_walls), rng=rng)
+	game = RicochetRobotsGame(board=board, num_robots=int(level.num_robots), rng=rng)
+	return game
 
 
 def extract_plan_features(plan) -> Tuple[int, int]:
@@ -199,9 +204,9 @@ def populate_cache_for_level(
 def main():
     parser = argparse.ArgumentParser(description="Generate A* plan cache for curriculum levels")
     parser.add_argument("config", type=str, help="Path to YAML configuration file")
-    parser.add_argument("--min-per-level", type=int, default=30, help="Minimum seeds per level to populate")
+    parser.add_argument("--min-per-level", type=int, default=10, help="Minimum seeds per level to populate")
     parser.add_argument("--max-attempts-per-level", type=int, default=5000, help="Max attempts per level")
-    parser.add_argument("--solver-max-depth", type=int, default=10, help="A* solver max depth")
+    parser.add_argument("--solver-max-depth", type=int, default=6, help="A* solver max depth")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed for reproducibility")
     args = parser.parse_args()
 
